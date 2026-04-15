@@ -16,14 +16,14 @@ echo "Starting VoyageAI Video Demo..."
 echo ""
 
 # Backend (FastAPI)
-echo "  Backend → http://localhost:8000"
-echo "  API docs → http://localhost:8000/docs"
+echo "  Backend → http://localhost:8001"
+echo "  API docs → http://localhost:8001/docs"
 cd "$REPO_DIR"
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload &
+python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8001 --reload &
 BACKEND_PID=$!
 
 # Frontend (Next.js)
-echo "  Frontend → http://localhost:3000"
+echo "  Frontend → http://localhost:8000"
 cd "$REPO_DIR/frontend"
 npm run dev &
 FRONTEND_PID=$!

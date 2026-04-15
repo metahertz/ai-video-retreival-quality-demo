@@ -30,7 +30,7 @@ const strategyColors: Record<string, string> = {
   fixed: 'bg-gray-100 text-gray-800',
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export function VideoCard({ result, onPlay }: VideoCardProps) {
   const [thumbError, setThumbError] = useState(false);
