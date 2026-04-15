@@ -1,0 +1,161 @@
+from pydantic import BaseModel, Field
+from typing import Optional, List, Literal
+from datetime import datetime
+
+
+# ── Settings ─────────────────────────────────────────────────────────────────
+
+class SettingsRequest(BaseModel):
+    voyage_api_key: str
+    mongodb_uri: str
+    mongodb_db: str = "voyage_video_demo"
+    mongodb_collection_videos: str = "videos"
+    mongodb_collection_segments: str = "video_segments"
+
+
+class SettingsResponse(BaseModel):
+    voyage_api_key_masked: str
+    mongodb_uri_masked: str
+    mongodb_db: str
+    mongodb_collection_videos: str
+    mongodb_collection_segments: str
+    settings_configured: bool
+
+
+class ConnectionTestResult(BaseModel):
+    voyage_ok: bool
+    mongodb_ok: bool
+    voyage_error: Optional[str] = None
+    mongodb_error: Optional[str] = None
+
+
+class IndexStatusResponse(BaseModel):
+    vector_index_status: str  # READY | BUILDING | NOT_FOUND | ERROR
+    text_index_status: str
+    message: str
+
+
+class ProfileIndexStatus(BaseModel):
+    profile_key: str
+    label: str
+    dims: int
+    quantization: Optional[str] = None
+    cost_note: str
+    index_name: str
+    status: str  # READY | BUILDING | PENDING | NOT_FOUND | ERROR
+
+
+class AllIndexStatusResponse(BaseModel):
+    profiles: List[ProfileIndexStatus]
+    text_index_status: str
+    message: str
+
+
+# ── YouTube search ────────────────────────────────────────────────────────────
+
+class YouTubeSearchRequest(BaseModel):
+    query: str
+    max_results: int = 10
+
+
+class YouTubeSearchResult(BaseModel):
+    youtube_id: str
+    title: str
+    duration: Optional[int] = None   # seconds
+    thumbnail_url: str
+    youtube_url: str
+    uploader: Optional[str] = None
+    view_count: Optional[int] = None
+
+
+# ── Video ─────────────────────────────────────────────────────────────────────
+
+class VideoDownloadRequest(BaseModel):
+    youtube_id: str
+
+
+class VideoResponse(BaseModel):
+    id: str
+    title: str
+    youtube_id: str
+    youtube_url: str
+    file_path: str
+    duration: float
+    thumbnail_url: str
+    status: str
+    created_at: datetime
+    segment_count: int
+    chunking_strategy: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+# ── Processing ────────────────────────────────────────────────────────────────
+
+class ProcessRequest(BaseModel):
+    video_id: str
+    chunking_strategy: Literal["whole", "caption", "scene", "fixed"]
+    interval_seconds: Optional[float] = 30.0
+
+
+class ProcessJobStatus(BaseModel):
+    job_id: str
+    video_id: str
+    status: Literal["pending", "processing", "completed", "error"]
+    progress: float = 0.0  # 0.0 – 1.0
+    message: str = ""
+    segments_processed: int = 0
+    total_segments: int = 0
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+class SearchRequest(BaseModel):
+    query: str
+    search_type: Literal["text", "vector"] = "vector"
+    limit: int = Field(default=10, ge=1, le=50)
+    profile: str = "1024_float"
+
+
+class SearchResult(BaseModel):
+    segment_id: str
+    video_id: str
+    video_title: str
+    youtube_id: str
+    segment_index: int
+    start_time: float
+    end_time: float
+    caption_text: Optional[str] = None
+    score: float
+    chunking_strategy: str
+
+
+class CompareSearchRequest(BaseModel):
+    query: str
+    profiles: List[str] = ["1024_float", "512_float", "256_float"]
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class ProfileSearchResult(BaseModel):
+    profile_key: str
+    label: str
+    results: List[SearchResult]
+    error: Optional[str] = None
+
+
+class CompareSearchResponse(BaseModel):
+    query: str
+    profiles: List[ProfileSearchResult]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def serialize_doc(doc: dict) -> dict:
+    """Convert ObjectId fields to strings for JSON serialisation."""
+    from bson import ObjectId
+    result = {}
+    for k, v in doc.items():
+        if isinstance(v, ObjectId):
+            result[k] = str(v)
+        else:
+            result[k] = v
+    return result

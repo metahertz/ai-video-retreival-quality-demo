@@ -1,0 +1,28 @@
+ Create a .gitignore at the repo root (/home/matt/voyage-35-video-mm/.gitignore) with:
+                   
+    # Downloaded videos and processed segments
+    backend/videos/                            
+        
+    # Environment variables (API keys, DB URIs)
+    .env         
+    .env.*
+    !.env.example
+                
+    # Python 
+    __pycache__/
+    *.py[cod]
+    *.pyo
+    .venv/     
+    venv/
+    *.egg-info/
+                          
+    # Frontend     
+    frontend/node_modules/
+    frontend/.next/
+    frontend/out/
+             
+    # OS / editor
+    .DS_Store
+    *.swp   
+    .idea/
+    .vscode/   
