@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"   # Next.js frontend
+      - "8001:8001"   # FastAPI backend
+    volumes:
+      # Full repo bind-mount — backend/videos lives here on the host
+      - .:/app
+      # Keep the Next.js build cache in a named volume so it doesn't
+      # appear in the host source tree and survives container restarts.
+      - frontend_next:/app/frontend/.next
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+
+volumes:
+  frontend_next:
