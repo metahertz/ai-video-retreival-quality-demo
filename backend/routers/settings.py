@@ -13,12 +13,18 @@ from ..models import (
     IndexStatusResponse,
     AllIndexStatusResponse,
     ProfileIndexStatus,
+    IndexCapacityInfo,
+    CreateIndexesResult,
 )
 from ..services.voyage import test_api_key
 from ..services.video_processing import generate_thumbnail
 from ..services.atlas import (
     PROFILES,
     TEXT_INDEX_NAME,
+    ATLAS_FREE_TIER_LIMIT,
+    TOTAL_INDEXES_NEEDED,
+    IndexLimitError,
+    check_index_capacity,
     create_all_profile_indexes,
     create_text_search_index,
     get_index_status,
@@ -111,17 +117,108 @@ async def test_connection(body: SettingsRequest):
     )
 
 
-@router.post("/create-indexes")
+@router.get("/index-capacity", response_model=IndexCapacityInfo)
+async def index_capacity():
+    """
+    Return the current Atlas Search index count for the segments collection
+    and whether the cluster may be at the M0/M2/M5 tier quota.
+    """
+    try:
+        col = await get_segments_collection()
+        info = await check_index_capacity(col)
+        if "error" in info:
+            raise HTTPException(status_code=500, detail=info["error"])
+
+        if info["all_present"]:
+            msg = "All required indexes are present."
+        elif info["potentially_at_limit"]:
+            msg = (
+                f"{len(info['missing_names'])} index(es) still needed, but the cluster already "
+                f"has {info['total_existing']} search index(es) — at or above the "
+                f"{ATLAS_FREE_TIER_LIMIT}-index limit for M0/M2/M5 tiers. "
+                f"Upgrade to M10+ to create all {TOTAL_INDEXES_NEEDED} required indexes."
+            )
+        else:
+            msg = f"{len(info['missing_names'])} index(es) not yet created."
+
+        return IndexCapacityInfo(
+            total_existing=info["total_existing"],
+            our_indexes_count=len(info["our_names"]),
+            missing_indexes=info["missing_names"],
+            total_needed=TOTAL_INDEXES_NEEDED,
+            all_present=info["all_present"],
+            potentially_at_limit=info["potentially_at_limit"],
+            tier_limit=ATLAS_FREE_TIER_LIMIT,
+            message=msg,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/create-indexes", response_model=CreateIndexesResult)
 async def create_indexes():
     """Create all 5 profile vector search indexes plus the text index."""
     try:
         col = await get_segments_collection()
-        await create_all_profile_indexes(col)
-        await create_text_search_index(col)
-        return {
-            "status": "creating",
-            "message": "Index creation initiated. Indexes will be READY within 1–2 minutes.",
-        }
+        result = await create_all_profile_indexes(col)
+
+        # If vector index creation already hit the limit, don't attempt the text index
+        if result["limit_reached"]:
+            return CreateIndexesResult(
+                status="limit_reached",
+                message=(
+                    f"Atlas Search index quota reached after creating "
+                    f"{len(result['created'])} index(es). "
+                    f"Your cluster tier (M0/M2/M5) allows only {ATLAS_FREE_TIER_LIMIT} "
+                    f"search indexes, but this demo needs {TOTAL_INDEXES_NEEDED}. "
+                    f"Upgrade to M10 or higher to create all required indexes."
+                ),
+                limit_reached=True,
+                created_count=len(result["created"]),
+                failed_count=len(result["failed"]),
+                upgrade_required=True,
+            )
+
+        # Attempt text index
+        try:
+            await create_text_search_index(col)
+        except IndexLimitError:
+            return CreateIndexesResult(
+                status="limit_reached",
+                message=(
+                    f"Atlas Search index quota reached while creating the text index "
+                    f"(created {len(result['created'])} vector index(es) first). "
+                    f"Upgrade to M10+ to create all {TOTAL_INDEXES_NEEDED} required indexes."
+                ),
+                limit_reached=True,
+                created_count=len(result["created"]),
+                failed_count=1,
+                upgrade_required=True,
+            )
+
+        if result["failed"]:
+            return CreateIndexesResult(
+                status="partial",
+                message=(
+                    f"Created {len(result['created'])} index(es); "
+                    f"{len(result['failed'])} failed with unexpected errors."
+                ),
+                limit_reached=False,
+                created_count=len(result["created"]),
+                failed_count=len(result["failed"]),
+                upgrade_required=False,
+            )
+
+        return CreateIndexesResult(
+            status="creating",
+            message="Index creation initiated. Indexes will be READY within 1–2 minutes.",
+            limit_reached=False,
+            created_count=len(result["created"]),
+            failed_count=0,
+            upgrade_required=False,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

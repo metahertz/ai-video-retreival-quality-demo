@@ -8,10 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { settingsApi } from '@/lib/api';
-import type { SettingsRequest, ConnectionTestResult, AllIndexStatusResponse } from '@/lib/types';
+import type { SettingsRequest, ConnectionTestResult, AllIndexStatusResponse, IndexCapacityInfo } from '@/lib/types';
 import {
   Eye, EyeOff, Loader2, CheckCircle2, XCircle, RefreshCw,
-  Database, Key, Layers
+  Database, Key, Layers, AlertTriangle, ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -30,6 +30,8 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [creatingIndexes, setCreatingIndexes] = useState(false);
   const [indexStatus, setIndexStatus] = useState<AllIndexStatusResponse | null>(null);
+  const [indexCapacity, setIndexCapacity] = useState<IndexCapacityInfo | null>(null);
+  const [indexLimitHit, setIndexLimitHit] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillingThumbs, setBackfillingThumbs] = useState(false);
 
@@ -47,6 +49,7 @@ export default function SettingsPage() {
     }).catch(() => {});
 
     settingsApi.indexStatus().then(setIndexStatus).catch(() => {});
+    settingsApi.indexCapacity().then(setIndexCapacity).catch(() => {});
   }, []);
 
   const handleSave = async () => {
@@ -76,9 +79,24 @@ export default function SettingsPage() {
 
   const handleCreateIndexes = async () => {
     setCreatingIndexes(true);
+    setIndexLimitHit(false);
     try {
-      await settingsApi.createIndexes();
-      toast.success('Index creation initiated — indexes will be ready in ~1–2 minutes');
+      const result = await settingsApi.createIndexes();
+
+      if (result.limit_reached) {
+        setIndexLimitHit(true);
+        setCreatingIndexes(false);
+        // Refresh capacity so the UI reflects current state
+        settingsApi.indexCapacity().then(setIndexCapacity).catch(() => {});
+        return;
+      }
+
+      if (result.status === 'partial') {
+        toast.warning(result.message);
+      } else {
+        toast.success('Index creation initiated — indexes will be ready in ~1–2 minutes');
+      }
+
       const poll = setInterval(async () => {
         try {
           const status = await settingsApi.indexStatus();
@@ -101,8 +119,12 @@ export default function SettingsPage() {
 
   const handleRefreshIndexStatus = async () => {
     try {
-      const status = await settingsApi.indexStatus();
+      const [status, capacity] = await Promise.all([
+        settingsApi.indexStatus(),
+        settingsApi.indexCapacity(),
+      ]);
       setIndexStatus(status);
+      setIndexCapacity(capacity);
     } catch {}
   };
 
@@ -301,6 +323,19 @@ export default function SettingsPage() {
             Five vector profiles (Matryoshka dims + quantisation) plus a full-text index.
             Takes ~1–2 minutes to become READY after creation.
           </CardDescription>
+          {indexCapacity && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="text-xs text-muted-foreground">
+                {indexCapacity.total_existing} / {indexCapacity.total_needed} indexes on cluster
+              </span>
+              {indexCapacity.all_present && (
+                <Badge className="bg-emerald-600 hover:bg-emerald-600 text-xs py-0">All present</Badge>
+              )}
+              {indexCapacity.potentially_at_limit && !indexCapacity.all_present && (
+                <Badge variant="destructive" className="text-xs py-0">At tier limit</Badge>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {indexStatus && indexStatus.profiles.length > 0 && (
@@ -333,11 +368,46 @@ export default function SettingsPage() {
               </table>
             </div>
           )}
+          {/* Tier limit warning — shown when limit is detected proactively or after a failed attempt */}
+          {(indexLimitHit || (indexCapacity?.potentially_at_limit && !indexCapacity?.all_present)) && (
+            <div className="rounded-lg border border-amber-400/60 bg-amber-50 dark:bg-amber-900/10 p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                    {indexLimitHit ? 'Atlas Search index quota reached' : 'Atlas tier limit detected'}
+                  </p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    This demo requires <strong>{indexCapacity?.total_needed ?? 6} search indexes</strong> (5 vector
+                    profiles + 1 text). Free and shared tiers (M0, M2, M5) allow only{' '}
+                    <strong>{indexCapacity?.tier_limit ?? 3} indexes per cluster</strong>.
+                    {indexLimitHit
+                      ? ` Index creation stopped after ${indexCapacity?.our_indexes_count ?? '?'} of ${indexCapacity?.total_needed ?? 6}.`
+                      : ` The cluster currently has ${indexCapacity?.total_existing} index(es) with ${indexCapacity?.missing_indexes.length} still needed.`}
+                  </p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300">
+                    Upgrade to an <strong>M10 or higher</strong> dedicated cluster to support all required indexes
+                    and unlock the full demo functionality.
+                  </p>
+                  <a
+                    href="https://www.mongodb.com/pricing"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline"
+                  >
+                    View Atlas pricing <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 flex-wrap items-center">
             <Button
               variant="outline"
               onClick={handleCreateIndexes}
-              disabled={creatingIndexes}
+              disabled={creatingIndexes || (indexLimitHit && indexCapacity?.all_present === false)}
+              title={indexLimitHit ? 'Cluster has reached the Atlas Search index tier limit' : undefined}
             >
               {creatingIndexes && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create / Recreate Indexes

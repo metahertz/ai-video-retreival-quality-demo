@@ -8,6 +8,23 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 VECTOR_INDEX_NAME = "video_segment_vector_index"
 TEXT_INDEX_NAME = "video_segment_text_index"
 
+# Atlas Search index limits by tier
+ATLAS_FREE_TIER_LIMIT = 3   # M0 / M2 / M5 shared tiers
+TOTAL_INDEXES_NEEDED = 6    # 5 vector profiles + 1 text
+
+
+class IndexLimitError(Exception):
+    """Raised when Atlas rejects index creation due to tier search-index quota."""
+    pass
+
+
+def is_index_limit_error(e: Exception) -> bool:
+    """Return True if the exception message indicates an Atlas Search index quota error."""
+    msg = str(e).lower()
+    limit_words = {"limit", "maximum", "exceeded", "quota", "too many", "allowed", "num search"}
+    index_words = {"index", "search"}
+    return any(w in msg for w in limit_words) and any(w in msg for w in index_words)
+
 # ── Retrieval profiles ────────────────────────────────────────────────────────
 # Each profile maps to a named Atlas Vector Search index.
 # 512D / 256D fields are Matryoshka slices stored at processing time.
@@ -57,6 +74,59 @@ PROFILES: dict[str, dict] = {
 }
 
 
+async def check_index_capacity(collection: AsyncIOMotorCollection) -> dict:
+    """
+    List all Atlas Search indexes on the collection and return capacity info.
+
+    Returns a dict with:
+        existing_names       – names of all search indexes currently on this collection
+        our_names            – subset that belong to this app
+        missing_names        – our required indexes not yet created
+        total_existing       – total count of existing search indexes
+        total_needed         – how many this app requires (TOTAL_INDEXES_NEEDED)
+        all_present          – True if every required index exists
+        potentially_at_limit – True if existing >= FREE_TIER_LIMIT and some are still missing
+        error                – error string if listing failed
+    """
+    our_expected = {PROFILES[k]["index"] for k in PROFILES} | {TEXT_INDEX_NAME}
+    existing_names: list[str] = []
+    try:
+        async for idx in collection.list_search_indexes():
+            name = idx.get("name", "")
+            if name:
+                existing_names.append(name)
+    except Exception as e:
+        return {
+            "error": str(e),
+            "existing_names": [],
+            "our_names": [],
+            "missing_names": sorted(our_expected),
+            "total_existing": 0,
+            "total_needed": TOTAL_INDEXES_NEEDED,
+            "all_present": False,
+            "potentially_at_limit": False,
+        }
+
+    our_present = [n for n in existing_names if n in our_expected]
+    missing = sorted(n for n in our_expected if n not in existing_names)
+    total = len(existing_names)
+    all_present = len(missing) == 0
+
+    # Heuristic: if we already have >= FREE_TIER_LIMIT indexes and still need more,
+    # the cluster is likely at the M0/M2/M5 quota.
+    potentially_at_limit = (total >= ATLAS_FREE_TIER_LIMIT) and not all_present
+
+    return {
+        "existing_names": existing_names,
+        "our_names": our_present,
+        "missing_names": missing,
+        "total_existing": total,
+        "total_needed": TOTAL_INDEXES_NEEDED,
+        "all_present": all_present,
+        "potentially_at_limit": potentially_at_limit,
+    }
+
+
 async def create_profile_index(collection: AsyncIOMotorCollection, profile_key: str) -> str:
     """Create a named Atlas Vector Search index for a retrieval profile."""
     profile = PROFILES[profile_key]
@@ -80,16 +150,35 @@ async def create_profile_index(collection: AsyncIOMotorCollection, profile_key: 
     except Exception as e:
         if "already exists" in str(e).lower() or "IndexAlreadyExists" in str(e):
             return profile["index"]
+        if is_index_limit_error(e):
+            raise IndexLimitError(str(e)) from e
         raise
 
 
-async def create_all_profile_indexes(collection: AsyncIOMotorCollection) -> list[str]:
-    """Create all 5 profile vector search indexes."""
-    results = []
+async def create_all_profile_indexes(collection: AsyncIOMotorCollection) -> dict:
+    """
+    Attempt to create all 5 profile vector search indexes.
+
+    Returns a dict:
+        created       – list of index names successfully created / already existing
+        failed        – list of index names that failed (non-limit errors)
+        limit_reached – True if an Atlas tier quota error was encountered
+    """
+    created: list[str] = []
+    failed: list[str] = []
+    limit_reached = False
+
     for key in PROFILES:
-        name = await create_profile_index(collection, key)
-        results.append(name)
-    return results
+        try:
+            name = await create_profile_index(collection, key)
+            created.append(name)
+        except IndexLimitError:
+            limit_reached = True
+            failed.append(PROFILES[key]["index"])
+        except Exception:
+            failed.append(PROFILES[key]["index"])
+
+    return {"created": created, "failed": failed, "limit_reached": limit_reached}
 
 
 async def get_all_profile_index_statuses(
@@ -146,6 +235,8 @@ async def create_text_search_index(collection: AsyncIOMotorCollection) -> str:
     except Exception as e:
         if "already exists" in str(e).lower() or "IndexAlreadyExists" in str(e):
             return TEXT_INDEX_NAME
+        if is_index_limit_error(e):
+            raise IndexLimitError(str(e)) from e
         raise
 
 

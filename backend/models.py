@@ -51,6 +51,26 @@ class AllIndexStatusResponse(BaseModel):
     message: str
 
 
+class IndexCapacityInfo(BaseModel):
+    total_existing: int          # search indexes currently on the segments collection
+    our_indexes_count: int       # of those, how many belong to this app
+    missing_indexes: List[str]   # our required index names not yet created
+    total_needed: int            # total indexes this app requires
+    all_present: bool
+    potentially_at_limit: bool   # heuristic: at/near M0/M2/M5 quota
+    tier_limit: int              # known free-tier limit (3)
+    message: str
+
+
+class CreateIndexesResult(BaseModel):
+    status: str              # "creating" | "limit_reached" | "partial" | "error"
+    message: str
+    limit_reached: bool = False
+    created_count: int = 0
+    failed_count: int = 0
+    upgrade_required: bool = False
+
+
 # ── YouTube search ────────────────────────────────────────────────────────────
 
 class YouTubeSearchRequest(BaseModel):

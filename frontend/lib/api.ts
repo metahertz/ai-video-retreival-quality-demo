@@ -3,6 +3,8 @@ import type {
   CompareSearchRequest,
   CompareSearchResponse,
   ConnectionTestResult,
+  CreateIndexesResult,
+  IndexCapacityInfo,
   IndexStatusResponse,
   ProcessJobStatus,
   ProcessRequest,
@@ -55,8 +57,9 @@ export const settingsApi = {
   save: (body: SettingsRequest) => apiPost<SettingsResponse>('/api/settings', body),
   testConnection: (body: SettingsRequest) =>
     apiPost<ConnectionTestResult>('/api/settings/test-connection', body),
-  createIndexes: () => apiPost<{ status: string; message: string }>('/api/settings/create-indexes'),
+  createIndexes: () => apiPost<CreateIndexesResult>('/api/settings/create-indexes'),
   indexStatus: () => apiGet<AllIndexStatusResponse>('/api/settings/index-status'),
+  indexCapacity: () => apiGet<IndexCapacityInfo>('/api/settings/index-capacity'),
   backfillDimensions: () =>
     apiPost<{ updated: number; message: string }>('/api/settings/backfill-dimensions'),
   backfillThumbnails: () =>

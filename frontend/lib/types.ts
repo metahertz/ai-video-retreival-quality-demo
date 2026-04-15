@@ -46,6 +46,26 @@ export interface AllIndexStatusResponse {
   message: string;
 }
 
+export interface IndexCapacityInfo {
+  total_existing: number;
+  our_indexes_count: number;
+  missing_indexes: string[];
+  total_needed: number;
+  all_present: boolean;
+  potentially_at_limit: boolean;
+  tier_limit: number;
+  message: string;
+}
+
+export interface CreateIndexesResult {
+  status: 'creating' | 'limit_reached' | 'partial' | 'error';
+  message: string;
+  limit_reached: boolean;
+  created_count: number;
+  failed_count: number;
+  upgrade_required: boolean;
+}
+
 export interface YouTubeSearchResult {
   youtube_id: string;
   title: string;
