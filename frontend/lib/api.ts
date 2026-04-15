@@ -14,10 +14,8 @@ import type {
   YouTubeSearchResult,
 } from './types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
-
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(path);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
@@ -26,7 +24,7 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -43,7 +41,7 @@ async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function apiDelete(path: string): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
+  const res = await fetch(path, { method: 'DELETE' });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
@@ -75,11 +73,11 @@ export const videosApi = {
   download: (youtubeId: string) =>
     apiPost<VideoResponse>('/api/videos/download', { youtube_id: youtubeId }),
   delete: (id: string) => apiDelete(`/api/videos/${id}`),
-  streamUrl: (videoId: string) => `${API_BASE}/api/videos/${videoId}/stream`,
+  streamUrl: (videoId: string) => `/api/videos/${videoId}/stream`,
   segmentStreamUrl: (videoId: string, segIndex: number) =>
-    `${API_BASE}/api/videos/${videoId}/segments/${segIndex}/stream`,
+    `/api/videos/${videoId}/segments/${segIndex}/stream`,
   segmentThumbnailUrl: (videoId: string, segIndex: number) =>
-    `${API_BASE}/api/videos/${videoId}/segments/${segIndex}/thumbnail`,
+    `/api/videos/${videoId}/segments/${segIndex}/thumbnail`,
 };
 
 // ── Process ───────────────────────────────────────────────────────────────────

@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import get_settings as _get_settings
 from .routers import settings, videos, process, search
 
 VIDEOS_DIR = str(Path(__file__).parent / "videos")
@@ -30,7 +29,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_get_settings().cors_origins,
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

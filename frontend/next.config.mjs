@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:8001';
+
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -7,6 +9,14 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.ytimg.com' },
       { protocol: 'https', hostname: 'i9.ytimg.com' },
     ],
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
+      },
+    ];
   },
 };
 

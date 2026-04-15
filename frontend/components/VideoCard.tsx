@@ -30,19 +30,14 @@ const strategyColors: Record<string, string> = {
   fixed: 'bg-gray-100 text-gray-800',
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
-
 export function VideoCard({ result, onPlay }: VideoCardProps) {
   const [thumbError, setThumbError] = useState(false);
   const scorePercent = (result.score * 100).toFixed(1);
   const strategyClass = strategyColors[result.chunking_strategy] ?? strategyColors.fixed;
   const segDuration = result.end_time - result.start_time;
 
-  // Build absolute thumbnail URL from the relative path returned by the API
   const thumbnailSrc =
-    result.thumbnail_url && !thumbError
-      ? `${API_BASE}${result.thumbnail_url}`
-      : null;
+    result.thumbnail_url && !thumbError ? result.thumbnail_url : null;
 
   return (
     <Card

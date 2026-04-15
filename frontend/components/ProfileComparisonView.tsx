@@ -5,8 +5,6 @@ import type { CompareSearchResponse, SearchResult } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Film, Play } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
-
 interface Props {
   data: CompareSearchResponse;
   onPlay: (result: SearchResult) => void;
@@ -28,9 +26,7 @@ interface CompareCardProps {
 function CompareCard({ result, rank, isShared, onPlay }: CompareCardProps) {
   const [thumbError, setThumbError] = useState(false);
   const thumbnailSrc =
-    result.thumbnail_url && !thumbError
-      ? `${API_BASE}${result.thumbnail_url}`
-      : null;
+    result.thumbnail_url && !thumbError ? result.thumbnail_url : null;
 
   return (
     <div
