@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List
 from pydantic_settings import BaseSettings
 from dotenv import set_key, dotenv_values
 
@@ -11,8 +12,16 @@ class Settings(BaseSettings):
     mongodb_db: str = "voyage_video_demo"
     mongodb_collection_videos: str = "videos"
     mongodb_collection_segments: str = "video_segments"
+    cors_origins: List[str] = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "https://videodemo.metahertz.dev",
+    ]
 
-    model_config = {"env_file": str(ENV_PATH), "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": str(ENV_PATH),
+        "env_file_encoding": "utf-8",
+    }
 
 
 def get_settings() -> Settings:

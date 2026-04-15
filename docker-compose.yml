@@ -4,18 +4,14 @@ services:
       context: .
       network: host       # apt-get / npm need host DNS during image build
     # host networking: container shares the host network stack directly.
-    # ports: mapping is not used with host mode — services bind to the
-    # host's ports directly (frontend :8000, backend :8001).
+    # Ports bind to the host directly — no mapping needed.
     network_mode: host
     volumes:
       # Full repo bind-mount — backend/videos lives here on the host
       - .:/app
-      # Keep the Next.js build cache in a named volume so it doesn't
-      # appear in the host source tree and survives container restarts.
-      - frontend_next:/app/frontend/.next
     environment:
+      # NEXT_PUBLIC_* vars are baked into the browser bundle at build time.
+      # Set this to the URL the *browser* uses to reach the backend.
+      # Behind a reverse proxy this is the public hostname, not localhost.
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
     restart: unless-stopped
-
-volumes:
-  frontend_next:
