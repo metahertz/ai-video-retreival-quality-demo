@@ -19,17 +19,25 @@ router = APIRouter()
 
 
 def _build_search_result(seg: dict, video: dict) -> SearchResult:
+    video_id = seg.get("video_id", "")
+    seg_index = seg.get("segment_index", 0)
+    # Always emit the thumbnail URL — the endpoint returns 404 if the file
+    # doesn't exist yet; the frontend handles that gracefully.
+    thumbnail_url = f"/api/videos/{video_id}/segments/{seg_index}/thumbnail"
     return SearchResult(
         segment_id=seg["_id"],
-        video_id=seg.get("video_id", ""),
+        video_id=video_id,
         video_title=video.get("title", ""),
         youtube_id=video.get("youtube_id", ""),
-        segment_index=seg.get("segment_index", 0),
+        youtube_url=video.get("youtube_url", ""),
+        segment_index=seg_index,
         start_time=seg.get("start_time", 0.0),
         end_time=seg.get("end_time", 0.0),
         caption_text=seg.get("caption_text"),
         score=float(seg.get("score", 0.0)),
         chunking_strategy=seg.get("chunking_strategy", ""),
+        thumbnail_url=thumbnail_url,
+        created_at=seg.get("created_at"),
     )
 
 
@@ -64,6 +72,7 @@ async def _run_vector_search(
                 "embedding_512": 0,
                 "embedding_256": 0,
                 "score": {"$meta": "vectorSearchScore"},
+                # thumbnail_path kept so _build_search_result can use it
             }
         },
     ]
@@ -126,6 +135,7 @@ async def search(body: SearchRequest):
                     "embedding_512": 0,
                     "embedding_256": 0,
                     "score": {"$meta": "searchScore"},
+                    # thumbnail_path kept so _build_search_result can use it
                 }
             },
         ]

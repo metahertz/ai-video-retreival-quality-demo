@@ -1,8 +1,11 @@
+import os
+
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from ..config import get_settings, save_settings, mask_api_key, mask_uri
-from ..database import get_client, reset_client, get_segments_collection
+from ..database import get_client, reset_client, get_segments_collection, get_videos_collection
 from ..models import (
     SettingsRequest,
     SettingsResponse,
@@ -12,6 +15,7 @@ from ..models import (
     ProfileIndexStatus,
 )
 from ..services.voyage import test_api_key
+from ..services.video_processing import generate_thumbnail
 from ..services.atlas import (
     PROFILES,
     TEXT_INDEX_NAME,
@@ -186,5 +190,53 @@ async def backfill_dimensions():
             )
             updated += 1
         return {"updated": updated, "message": f"Backfilled {updated} segments."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/backfill-thumbnails")
+async def backfill_thumbnails():
+    """
+    Generate thumbnails for segments that don't have one yet.
+    Reads each segment's start/end time and the parent video's file path,
+    then extracts a JPEG frame at the midpoint using ffmpeg.
+    No VoyageAI API calls required.
+    """
+    try:
+        col = await get_segments_collection()
+        videos_col = await get_videos_collection()
+        updated = 0
+        skipped = 0
+        async for seg in col.find(
+            {"thumbnail_path": {"$exists": False}},
+            {"_id": 1, "video_id": 1, "segment_index": 1, "start_time": 1, "end_time": 1},
+        ):
+            video = await videos_col.find_one(
+                {"_id": ObjectId(seg["video_id"])},
+                {"file_path": 1},
+            )
+            if not video or not video.get("file_path"):
+                skipped += 1
+                continue
+            video_path = video["file_path"]
+            if not os.path.exists(video_path):
+                skipped += 1
+                continue
+            midpoint = (seg.get("start_time", 0) + seg.get("end_time", 0)) / 2
+            thumb_dir = os.path.join(os.path.dirname(video_path), "thumbnails")
+            thumb_path = os.path.join(thumb_dir, f"thumb_{seg.get('segment_index', 0):04d}.jpg")
+            try:
+                await generate_thumbnail(video_path, midpoint, thumb_path)
+                await col.update_one(
+                    {"_id": seg["_id"]},
+                    {"$set": {"thumbnail_path": thumb_path}},
+                )
+                updated += 1
+            except Exception:
+                skipped += 1
+        msg = f"Generated {updated} thumbnails"
+        if skipped:
+            msg += f", {skipped} skipped"
+        return {"updated": updated, "skipped": skipped, "message": msg + "."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -17,6 +17,7 @@ from ..services.video_processing import (
     chunk_by_captions,
     chunk_by_scenes,
     chunk_fixed_interval,
+    generate_thumbnail,
     MAX_VIDEO_BYTES,
 )
 from ..services.youtube import download_captions
@@ -201,9 +202,20 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
         completed_count = 0
         skipped_embed = 0
 
+        # Thumbnail directory: <video_dir>/thumbnails/
+        thumb_dir = os.path.join(os.path.dirname(video_path), "thumbnails")
+
         async def _embed_one(orig_index: int, chunk: dict) -> None:
             nonlocal completed_count, skipped_embed
             try:
+                # Generate thumbnail (best-effort — never fails the segment)
+                midpoint = (chunk["start"] + chunk["end"]) / 2
+                thumb_path = os.path.join(thumb_dir, f"thumb_{orig_index:04d}.jpg")
+                try:
+                    await generate_thumbnail(video_path, midpoint, thumb_path)
+                except Exception:
+                    thumb_path = None
+
                 embeddings_dict, metadata = await _embed_with_backoff(chunk, semaphore)
                 seg_doc = {
                     "video_id": request.video_id,
@@ -212,6 +224,7 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
                     "end_time": chunk["end"],
                     "caption_text": chunk.get("caption_text"),
                     "file_path": chunk["path"],
+                    "thumbnail_path": thumb_path,
                     "embedding": embeddings_dict["embedding"],
                     "embedding_512": embeddings_dict["embedding_512"],
                     "embedding_256": embeddings_dict["embedding_256"],

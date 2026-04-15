@@ -121,12 +121,15 @@ class SearchResult(BaseModel):
     video_id: str
     video_title: str
     youtube_id: str
+    youtube_url: str
     segment_index: int
     start_time: float
     end_time: float
     caption_text: Optional[str] = None
     score: float
     chunking_strategy: str
+    thumbnail_url: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class CompareSearchRequest(BaseModel):

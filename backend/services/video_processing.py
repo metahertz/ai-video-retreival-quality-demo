@@ -34,6 +34,26 @@ async def _cut_segment(input_path: str, start: float, duration: float, output_pa
     return await loop.run_in_executor(None, _cut_segment_sync, input_path, start, duration, output_path)
 
 
+# ── Thumbnail extraction ──────────────────────────────────────────────────────
+
+def _extract_thumbnail_sync(video_path: str, time_offset: float, output_path: str) -> str:
+    """Extract a single JPEG frame at time_offset seconds."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    (
+        ffmpeg.input(video_path, ss=time_offset)
+        .output(output_path, vframes=1)
+        .overwrite_output()
+        .run(quiet=True)
+    )
+    return output_path
+
+
+async def generate_thumbnail(video_path: str, time_offset: float, output_path: str) -> str:
+    """Async wrapper — runs ffmpeg in a thread pool executor."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _extract_thumbnail_sync, video_path, time_offset, output_path)
+
+
 # ── Strategy: whole video ─────────────────────────────────────────────────────
 
 async def chunk_whole_video(video_path: str) -> list[dict]:

@@ -6,7 +6,7 @@ from typing import Optional
 import aiofiles
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from ..config import get_settings
 from ..database import get_videos_collection, get_segments_collection
@@ -223,3 +223,18 @@ async def stream_segment(video_id: str, seg_index: int, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Segment not found")
     return await _stream_file(doc["file_path"], request)
+
+
+@router.get("/{video_id}/segments/{seg_index}/thumbnail")
+async def get_segment_thumbnail(video_id: str, seg_index: int):
+    col = await get_segments_collection()
+    doc = await col.find_one(
+        {"video_id": video_id, "segment_index": seg_index},
+        {"thumbnail_path": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Segment not found")
+    thumb_path = doc.get("thumbnail_path")
+    if not thumb_path or not os.path.exists(thumb_path):
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    return FileResponse(thumb_path, media_type="image/jpeg")
