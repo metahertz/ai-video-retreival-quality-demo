@@ -1,9 +1,12 @@
 services:
   app:
-    build: .
-    ports:
-      - "8000:8000"   # Next.js frontend
-      - "8001:8001"   # FastAPI backend
+    build:
+      context: .
+      network: host       # apt-get / npm need host DNS during image build
+    # host networking: container shares the host network stack directly.
+    # ports: mapping is not used with host mode — services bind to the
+    # host's ports directly (frontend :8000, backend :8001).
+    network_mode: host
     volumes:
       # Full repo bind-mount — backend/videos lives here on the host
       - .:/app
