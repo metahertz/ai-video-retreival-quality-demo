@@ -101,12 +101,16 @@ export default function SettingsPage() {
         try {
           const status = await settingsApi.indexStatus();
           setIndexStatus(status);
-          const allReady = status.profiles.every((p) => p.status === 'READY') &&
-            status.text_index_status === 'READY';
-          if (allReady) {
+          // Stop when every index is settled (READY or NOT_FOUND — not still BUILDING/PENDING)
+          const allSettled =
+            status.profiles.every((p) => p.status === 'READY' || p.status === 'NOT_FOUND') &&
+            (status.text_index_status === 'READY' || status.text_index_status === 'NOT_FOUND');
+          if (allSettled) {
             clearInterval(poll);
             setCreatingIndexes(false);
-            toast.success('All indexes are READY');
+            const readyCount = status.profiles.filter((p) => p.status === 'READY').length +
+              (status.text_index_status === 'READY' ? 1 : 0);
+            toast.success(`${readyCount} index${readyCount !== 1 ? 'es' : ''} ready`);
           }
         } catch {}
       }, 5000);
@@ -320,7 +324,9 @@ export default function SettingsPage() {
             <Layers className="h-4 w-4" /> Atlas Search Indexes
           </CardTitle>
           <CardDescription className="text-xs">
-            Five vector profiles (Matryoshka dims + quantisation) plus a full-text index.
+            Five vector profiles (Matryoshka dims + quantisation) plus a full-text index. On free/shared
+            tiers (M0/M2/M5) indexes are created in priority order so both search types work within the
+            3-index quota. The search page adapts automatically to whichever indexes are READY.
             Takes ~1–2 minutes to become READY after creation.
           </CardDescription>
           {indexCapacity && (
@@ -386,8 +392,9 @@ export default function SettingsPage() {
                       : ` The cluster currently has ${indexCapacity?.total_existing} index(es) with ${indexCapacity?.missing_indexes.length} still needed.`}
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-300">
-                    Upgrade to an <strong>M10 or higher</strong> dedicated cluster to support all required indexes
-                    and unlock the full demo functionality.
+                    The search page automatically shows only the indexes that are available on this cluster.
+                    Upgrade to an <strong>M10 or higher</strong> dedicated cluster to unlock all 5 profiles
+                    and cross-profile comparison.
                   </p>
                   <a
                     href="https://www.mongodb.com/pricing"

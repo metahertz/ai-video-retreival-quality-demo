@@ -181,6 +181,64 @@ async def create_all_profile_indexes(collection: AsyncIOMotorCollection) -> dict
     return {"created": created, "failed": failed, "limit_reached": limit_reached}
 
 
+async def create_all_indexes(collection: AsyncIOMotorCollection) -> dict:
+    """
+    Create all indexes in a tier-aware priority order:
+      1. Primary vector profile (1024_float)
+      2. Text index
+      3. Remaining vector profiles (512_float, 256_float, 1024_int8, 1024_binary)
+
+    On free/shared clusters (M0/M2/M5, 3-index limit) this ensures both vector
+    and text search work before the quota is exhausted on secondary profiles.
+    With 3 slots: 1024_float + text + 512_float → vector search, text search,
+    and cross-profile comparison all become available.
+
+    Returns a dict:
+        created       – index names successfully created / already existing
+        failed        – index names that failed (non-limit errors)
+        limit_reached – True if an Atlas tier quota error was encountered
+    """
+    created: list[str] = []
+    failed: list[str] = []
+    limit_reached = False
+
+    # 1. Primary vector profile
+    try:
+        name = await create_profile_index(collection, "1024_float")
+        created.append(name)
+    except IndexLimitError:
+        limit_reached = True
+        failed.append(PROFILES["1024_float"]["index"])
+        return {"created": created, "failed": failed, "limit_reached": limit_reached}
+    except Exception:
+        failed.append(PROFILES["1024_float"]["index"])
+
+    # 2. Text index — before secondary vector profiles so it's not squeezed out
+    try:
+        await create_text_search_index(collection)
+        created.append(TEXT_INDEX_NAME)
+    except IndexLimitError:
+        limit_reached = True
+        failed.append(TEXT_INDEX_NAME)
+        return {"created": created, "failed": failed, "limit_reached": limit_reached}
+    except Exception:
+        failed.append(TEXT_INDEX_NAME)
+
+    # 3. Remaining vector profiles
+    for key in ("512_float", "256_float", "1024_int8", "1024_binary"):
+        try:
+            name = await create_profile_index(collection, key)
+            created.append(name)
+        except IndexLimitError:
+            limit_reached = True
+            failed.append(PROFILES[key]["index"])
+            break
+        except Exception:
+            failed.append(PROFILES[key]["index"])
+
+    return {"created": created, "failed": failed, "limit_reached": limit_reached}
+
+
 async def get_all_profile_index_statuses(
     collection: AsyncIOMotorCollection,
 ) -> dict[str, str]:

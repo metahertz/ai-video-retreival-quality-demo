@@ -25,6 +25,7 @@ from ..services.atlas import (
     TOTAL_INDEXES_NEEDED,
     IndexLimitError,
     check_index_capacity,
+    create_all_indexes,
     create_all_profile_indexes,
     create_text_search_index,
     get_index_status,
@@ -159,42 +160,30 @@ async def index_capacity():
 
 @router.post("/create-indexes", response_model=CreateIndexesResult)
 async def create_indexes():
-    """Create all 5 profile vector search indexes plus the text index."""
+    """
+    Create all indexes in tier-aware priority order: primary vector → text → remaining profiles.
+    On free/shared clusters (3-index limit) this ensures both search types work before
+    the quota is exhausted on secondary vector profiles.
+    """
     try:
         col = await get_segments_collection()
-        result = await create_all_profile_indexes(col)
+        result = await create_all_indexes(col)
 
-        # If vector index creation already hit the limit, don't attempt the text index
         if result["limit_reached"]:
+            n_created = len(result["created"])
             return CreateIndexesResult(
                 status="limit_reached",
                 message=(
                     f"Atlas Search index quota reached after creating "
-                    f"{len(result['created'])} index(es). "
+                    f"{n_created} index(es). "
                     f"Your cluster tier (M0/M2/M5) allows only {ATLAS_FREE_TIER_LIMIT} "
                     f"search indexes, but this demo needs {TOTAL_INDEXES_NEEDED}. "
-                    f"Upgrade to M10 or higher to create all required indexes."
+                    f"The search page will automatically adapt to the available indexes. "
+                    f"Upgrade to M10 or higher to unlock all profiles and comparison."
                 ),
                 limit_reached=True,
-                created_count=len(result["created"]),
+                created_count=n_created,
                 failed_count=len(result["failed"]),
-                upgrade_required=True,
-            )
-
-        # Attempt text index
-        try:
-            await create_text_search_index(col)
-        except IndexLimitError:
-            return CreateIndexesResult(
-                status="limit_reached",
-                message=(
-                    f"Atlas Search index quota reached while creating the text index "
-                    f"(created {len(result['created'])} vector index(es) first). "
-                    f"Upgrade to M10+ to create all {TOTAL_INDEXES_NEEDED} required indexes."
-                ),
-                limit_reached=True,
-                created_count=len(result["created"]),
-                failed_count=1,
                 upgrade_required=True,
             )
 

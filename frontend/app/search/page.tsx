@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
@@ -8,11 +9,11 @@ import { Label } from '@/components/ui/label';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import ProfileComparisonView from '@/components/ProfileComparisonView';
-import { searchApi } from '@/lib/api';
+import { searchApi, settingsApi } from '@/lib/api';
 import { PROFILES, PROFILE_KEYS } from '@/lib/profiles';
-import type { SearchResult, CompareSearchResponse } from '@/lib/types';
+import type { SearchResult, CompareSearchResponse, AllIndexStatusResponse, IndexCapacityInfo } from '@/lib/types';
 import {
-  Search, Loader2, Sparkles, AlignLeft, Info, GitCompare, CheckSquare, Square,
+  Search, Loader2, Sparkles, AlignLeft, Info, GitCompare, CheckSquare, Square, ArrowRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -24,6 +25,37 @@ export default function SearchPage() {
   const [mode, setMode] = useState<Mode>('search');
   const [query, setQuery] = useState('');
   const [playTarget, setPlayTarget] = useState<SearchResult | null>(null);
+
+  // ── Index availability (drives adaptive UI) ───────────────────────────────
+  const [indexStatus, setIndexStatus] = useState<AllIndexStatusResponse | null>(null);
+  const [indexCapacity, setIndexCapacity] = useState<IndexCapacityInfo | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      settingsApi.indexStatus().catch(() => null),
+      settingsApi.indexCapacity().catch(() => null),
+    ]).then(([status, capacity]) => {
+      setIndexStatus(status);
+      setIndexCapacity(capacity);
+    });
+  }, []);
+
+  // Profiles that have a READY index. While loading, optimistically show all.
+  const availableProfileKeys = indexStatus
+    ? PROFILE_KEYS.filter(
+        (k) => indexStatus.profiles.find((p) => p.profile_key === k)?.status === 'READY'
+      )
+    : PROFILE_KEYS;
+
+  const textSearchAvailable = indexStatus
+    ? indexStatus.text_index_status === 'READY'
+    : true;
+
+  // Small-cluster mode: at tier limit with some indexes still missing
+  const isLimitedMode = !!(indexCapacity?.potentially_at_limit && !indexCapacity?.all_present);
+
+  // Comparison requires at least 2 ready vector profiles
+  const canCompare = availableProfileKeys.length >= 2;
 
   // ── Search mode ───────────────────────────────────────────────────────────
   const [searchType, setSearchType] = useState<SearchType>('vector');
@@ -41,6 +73,36 @@ export default function SearchPage() {
   const [comparing, setComparing] = useState(false);
   const [compareData, setCompareData] = useState<CompareSearchResponse | null>(null);
   const [hasCompared, setHasCompared] = useState(false);
+
+  // Keep selectedProfile and compareProfiles in sync with what's actually available
+  useEffect(() => {
+    if (availableProfileKeys.length > 0 && !availableProfileKeys.includes(selectedProfile as any)) {
+      setSelectedProfile(availableProfileKeys[0]);
+    }
+  }, [availableProfileKeys, selectedProfile]);
+
+  useEffect(() => {
+    if (availableProfileKeys.length > 0) {
+      setCompareProfiles((prev) => {
+        const filtered = prev.filter((k) => availableProfileKeys.includes(k as any));
+        return filtered.length >= 1 ? filtered : availableProfileKeys.slice(0, 2);
+      });
+    }
+  }, [availableProfileKeys.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If text search becomes unavailable and it's selected, switch to vector
+  useEffect(() => {
+    if (!textSearchAvailable && searchType === 'text') {
+      setSearchType('vector');
+    }
+  }, [textSearchAvailable, searchType]);
+
+  // If compare mode is active but no longer available, drop back to search
+  useEffect(() => {
+    if (!canCompare && mode === 'compare') {
+      setMode('search');
+    }
+  }, [canCompare, mode]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -115,7 +177,24 @@ export default function SearchPage() {
         </p>
       </div>
 
-      {/* Mode switcher */}
+      {/* Limited-mode hint banner */}
+      {isLimitedMode && (
+        <div className="flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2.5 text-blue-800 dark:text-blue-200">
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500" />
+          <span>
+            Running with a limited index set — your cluster tier (M0/M2/M5) supports{' '}
+            {indexCapacity?.tier_limit ?? 3} of the {indexCapacity?.total_needed ?? 6} required indexes.{' '}
+            {availableProfileKeys.length} vector profile{availableProfileKeys.length !== 1 ? 's' : ''} available
+            {textSearchAvailable ? ' + text search' : ''}.{' '}
+            Upgrade to M10+ to unlock all profiles and cross-profile comparison.{' '}
+            <Link href="/settings" className="font-medium underline inline-flex items-center gap-0.5">
+              Settings <ArrowRight className="h-3 w-3" />
+            </Link>
+          </span>
+        </div>
+      )}
+
+      {/* Mode switcher — Compare only shown when 2+ profiles are available */}
       <div className="flex gap-2">
         <Button
           variant={mode === 'search' ? 'default' : 'outline'}
@@ -125,14 +204,16 @@ export default function SearchPage() {
           <Search className="h-3.5 w-3.5 mr-1.5" />
           Search
         </Button>
-        <Button
-          variant={mode === 'compare' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setMode('compare')}
-        >
-          <GitCompare className="h-3.5 w-3.5 mr-1.5" />
-          Compare Profiles
-        </Button>
+        {canCompare && (
+          <Button
+            variant={mode === 'compare' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMode('compare')}
+          >
+            <GitCompare className="h-3.5 w-3.5 mr-1.5" />
+            Compare Profiles
+          </Button>
+        )}
       </div>
 
       {/* ── Search mode controls ── */}
@@ -148,14 +229,16 @@ export default function SearchPage() {
               <Sparkles className="h-3.5 w-3.5 mr-1.5" />
               Vector Search
             </Button>
-            <Button
-              variant={searchType === 'text' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setSearchType('text')}
-            >
-              <AlignLeft className="h-3.5 w-3.5 mr-1.5" />
-              Text Search
-            </Button>
+            {textSearchAvailable && (
+              <Button
+                variant={searchType === 'text' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSearchType('text')}
+              >
+                <AlignLeft className="h-3.5 w-3.5 mr-1.5" />
+                Text Search
+              </Button>
+            )}
           </div>
 
           {searchType === 'text' && (
@@ -165,12 +248,12 @@ export default function SearchPage() {
             </div>
           )}
 
-          {/* Profile selector — vector only */}
+          {/* Profile selector — vector only, filtered to available */}
           {searchType === 'vector' && (
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Retrieval Profile</Label>
               <div className="flex flex-wrap gap-2">
-                {PROFILE_KEYS.map((key) => {
+                {availableProfileKeys.map((key) => {
                   const p = PROFILES[key];
                   const active = selectedProfile === key;
                   return (
@@ -188,6 +271,12 @@ export default function SearchPage() {
                     </button>
                   );
                 })}
+                {availableProfileKeys.length === 0 && indexStatus && (
+                  <span className="text-xs text-muted-foreground">
+                    No vector indexes ready — visit{' '}
+                    <Link href="/settings" className="underline">Settings</Link> to create them.
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -228,9 +317,11 @@ export default function SearchPage() {
       {mode === 'compare' && (
         <div className="space-y-3 max-w-2xl">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Profiles to compare (select 2–5)</Label>
+            <Label className="text-xs text-muted-foreground">
+              Profiles to compare (select 2–{Math.min(5, availableProfileKeys.length)})
+            </Label>
             <div className="space-y-1.5">
-              {PROFILE_KEYS.map((key) => {
+              {availableProfileKeys.map((key) => {
                 const p = PROFILES[key];
                 const checked = compareProfiles.includes(key);
                 return (
