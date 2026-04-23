@@ -6,6 +6,8 @@ export interface SettingsRequest {
   mongodb_db: string;
   mongodb_collection_videos: string;
   mongodb_collection_segments: string;
+  yt_dlp_cookies_browser: string;
+  yt_dlp_cookies_file: string;
 }
 
 export interface SettingsResponse {
@@ -15,6 +17,8 @@ export interface SettingsResponse {
   mongodb_collection_videos: string;
   mongodb_collection_segments: string;
   settings_configured: boolean;
+  yt_dlp_cookies_browser: string;
+  yt_dlp_cookies_file: string;
 }
 
 export interface ConnectionTestResult {

@@ -88,6 +88,19 @@ export const settingsApi = {
     apiPost<{ updated: number; message: string }>('/api/settings/backfill-dimensions'),
   backfillThumbnails: () =>
     apiPost<{ updated: number; skipped: number; message: string }>('/api/settings/backfill-thumbnails'),
+  uploadCookies: async (file: File): Promise<{ path: string; bytes: number }> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/settings/upload-cookies', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const text = await res.text();
+      let detail = text;
+      try { detail = JSON.parse(text)?.detail ?? text; } catch {}
+      throw new Error(detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+  deleteCookies: () => apiDelete('/api/settings/cookies'),
 };
 
 // ── Videos ────────────────────────────────────────────────────────────────────

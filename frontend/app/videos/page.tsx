@@ -365,18 +365,18 @@ export default function VideosPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'search' | 'library')}>
-        <TabsList>
-          <TabsTrigger value="search">
-            <Search className="h-3.5 w-3.5 mr-1.5" />
+        <TabsList className="h-8 bg-muted/60 p-0.5 gap-0.5">
+          <TabsTrigger value="search" className="text-xs h-7 px-2.5 gap-1.5">
+            <Search className="h-3 w-3" />
             Search YouTube
           </TabsTrigger>
-          <TabsTrigger value="library" className="gap-2">
-            <Film className="h-3.5 w-3.5 mr-1.5" />
+          <TabsTrigger value="library" className="text-xs h-7 px-2.5 gap-1.5">
+            <Film className="h-3 w-3" />
             My Library
             {myVideos.length > 0 && (
               <Badge
                 variant={processingCount > 0 ? 'default' : 'secondary'}
-                className="text-xs px-1.5 py-0"
+                className="text-xs px-1.5 py-0 h-4 min-w-[1.25rem]"
               >
                 {processingCount > 0 ? (
                   <><Loader2 className="h-2.5 w-2.5 animate-spin mr-0.5" />{myVideos.length}</>

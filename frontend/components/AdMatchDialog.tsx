@@ -44,11 +44,13 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [thumbErrors, setThumbErrors] = useState<Set<string>>(new Set());
 
   const runMatch = useCallback(async () => {
     if (!ad) return;
     setLoading(true);
     setResults([]);
+    setThumbErrors(new Set());
     try {
       const res = await adsApi.match(ad.id, limit);
       setResults(res);
@@ -95,7 +97,7 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <DialogTitle>Match Segments — {ad.title}</DialogTitle>
         </DialogHeader>
@@ -152,24 +154,25 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
           )}
 
           {!loading && results.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pb-2">
               {results.map((seg) => {
                 const saved = savedIds.has(seg.segment_id);
                 const isSaving = savingId === seg.segment_id;
+                const thumbOk = !!seg.thumbnail_url && !thumbErrors.has(seg.segment_id);
                 return (
                   <div key={seg.segment_id} className="rounded-lg border bg-card overflow-hidden flex flex-col">
                     {/* Thumbnail */}
                     <div className="relative aspect-video bg-muted shrink-0">
-                      {seg.thumbnail_url ? (
+                      {thumbOk ? (
                         <img
-                          src={seg.thumbnail_url}
+                          src={seg.thumbnail_url!}
                           alt=""
                           className="w-full h-full object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          onError={() => setThumbErrors((prev) => new Set(prev).add(seg.segment_id))}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <Film className="h-6 w-6 text-muted-foreground/40" />
+                          <Film className="h-8 w-8 text-muted-foreground/30" />
                         </div>
                       )}
                       {/* Score badge */}
@@ -197,30 +200,29 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
                     </div>
 
                     {/* Info */}
-                    <div className="p-2 flex flex-col gap-1.5 flex-1">
-                      <p className="text-xs font-medium line-clamp-2 leading-tight">{seg.video_title}</p>
+                    <div className="p-3 flex flex-col gap-2 flex-1">
+                      <p className="text-xs font-medium line-clamp-2 leading-snug">{seg.video_title}</p>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs text-muted-foreground font-mono">
                           {formatTime(seg.start_time)}–{formatTime(seg.end_time)}
                         </span>
-                        {seg.emotion_dominant && (
+                        {seg.emotion_dominant ? (
                           <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${EMOTION_COLORS[seg.emotion_dominant] ?? 'bg-muted text-muted-foreground'}`}>
                             {seg.emotion_dominant}
                           </span>
-                        )}
-                        {!seg.emotion_dominant && (
+                        ) : (
                           <span className="rounded-full px-1.5 py-0.5 text-xs text-muted-foreground bg-muted">
                             unscored
                           </span>
                         )}
                       </div>
                       {seg.caption_text && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 leading-tight">{seg.caption_text}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2 leading-snug">{seg.caption_text}</p>
                       )}
                       <Button
                         size="sm"
                         variant={saved ? 'secondary' : 'default'}
-                        className="w-full mt-auto text-xs h-7"
+                        className="w-full mt-auto text-xs h-8"
                         disabled={saved || isSaving}
                         onClick={() => handleSavePlacement(seg)}
                       >

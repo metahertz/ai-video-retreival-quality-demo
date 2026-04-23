@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 from dotenv import set_key, dotenv_values
 
 ENV_PATH = Path(__file__).parent.parent / ".env"
+COOKIES_PATH = Path(__file__).parent.parent / "cookies.txt"
 
 
 class Settings(BaseSettings):
@@ -11,6 +12,8 @@ class Settings(BaseSettings):
     mongodb_db: str = "voyage_video_demo"
     mongodb_collection_videos: str = "videos"
     mongodb_collection_segments: str = "video_segments"
+    yt_dlp_cookies_browser: str = ""   # e.g. "chrome", "firefox", "edge"
+    yt_dlp_cookies_file: str = ""       # path to a Netscape cookies.txt
 
     model_config = {"env_file": str(ENV_PATH), "env_file_encoding": "utf-8"}
 
@@ -26,6 +29,8 @@ def save_settings(
     mongodb_db: str,
     mongodb_collection_videos: str,
     mongodb_collection_segments: str,
+    yt_dlp_cookies_browser: str = "",
+    yt_dlp_cookies_file: str = "",
 ) -> None:
     """Write settings to .env file."""
     env_path = str(ENV_PATH)
@@ -34,6 +39,8 @@ def save_settings(
     set_key(env_path, "MONGODB_DB", mongodb_db)
     set_key(env_path, "MONGODB_COLLECTION_VIDEOS", mongodb_collection_videos)
     set_key(env_path, "MONGODB_COLLECTION_SEGMENTS", mongodb_collection_segments)
+    set_key(env_path, "YT_DLP_COOKIES_BROWSER", yt_dlp_cookies_browser)
+    set_key(env_path, "YT_DLP_COOKIES_FILE", yt_dlp_cookies_file)
 
 
 def mask_api_key(key: str) -> str:

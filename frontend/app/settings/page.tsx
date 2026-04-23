@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,8 +11,15 @@ import { settingsApi } from '@/lib/api';
 import type { SettingsRequest, ConnectionTestResult, AllIndexStatusResponse, IndexCapacityInfo } from '@/lib/types';
 import {
   Eye, EyeOff, Loader2, CheckCircle2, XCircle, RefreshCw,
-  Database, Key, Layers, AlertTriangle, ExternalLink
+  Database, Key, Layers, AlertTriangle, ExternalLink, Play, Upload, Trash2,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
@@ -22,6 +29,8 @@ export default function SettingsPage() {
     mongodb_db: 'voyage_video_demo',
     mongodb_collection_videos: 'videos',
     mongodb_collection_segments: 'video_segments',
+    yt_dlp_cookies_browser: '',
+    yt_dlp_cookies_file: '',
   });
   const [showVoyageKey, setShowVoyageKey] = useState(false);
   const [showMongoUri, setShowMongoUri] = useState(false);
@@ -34,6 +43,9 @@ export default function SettingsPage() {
   const [indexLimitHit, setIndexLimitHit] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillingThumbs, setBackfillingThumbs] = useState(false);
+  const [uploadingCookies, setUploadingCookies] = useState(false);
+  const [deletingCookies, setDeletingCookies] = useState(false);
+  const cookiesFileRef = useRef<HTMLInputElement>(null);
 
   // Load current settings on mount
   useEffect(() => {
@@ -45,6 +57,8 @@ export default function SettingsPage() {
         mongodb_db: s.mongodb_db,
         mongodb_collection_videos: s.mongodb_collection_videos,
         mongodb_collection_segments: s.mongodb_collection_segments,
+        yt_dlp_cookies_browser: s.yt_dlp_cookies_browser,
+        yt_dlp_cookies_file: s.yt_dlp_cookies_file,
       }));
     }).catch(() => {});
 
@@ -153,6 +167,32 @@ export default function SettingsPage() {
       toast.error(e.message || 'Thumbnail backfill failed');
     } finally {
       setBackfillingThumbs(false);
+    }
+  };
+
+  const handleUploadCookies = async (file: File) => {
+    setUploadingCookies(true);
+    try {
+      const result = await settingsApi.uploadCookies(file);
+      setForm((f) => ({ ...f, yt_dlp_cookies_file: result.path }));
+      toast.success(`Cookies uploaded (${(result.bytes / 1024).toFixed(1)} KB)`);
+    } catch (e: any) {
+      toast.error(e.message || 'Upload failed');
+    } finally {
+      setUploadingCookies(false);
+    }
+  };
+
+  const handleDeleteCookies = async () => {
+    setDeletingCookies(true);
+    try {
+      await settingsApi.deleteCookies();
+      setForm((f) => ({ ...f, yt_dlp_cookies_file: '' }));
+      toast.success('Cookies file deleted');
+    } catch (e: any) {
+      toast.error(e.message || 'Delete failed');
+    } finally {
+      setDeletingCookies(false);
     }
   };
 
@@ -269,6 +309,118 @@ export default function SettingsPage() {
                 className="text-sm"
               />
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* YouTube / yt-dlp */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Play className="h-4 w-4" /> YouTube Downloads
+          </CardTitle>
+          <CardDescription className="text-xs">
+            If YouTube returns a &ldquo;Sign in to confirm you&rsquo;re not a bot&rdquo; error, provide
+            authentication cookies. A cookies file takes priority if both are set.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Browser */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cookies-browser" className="text-sm">
+              Browser cookies{' '}
+              <span className="text-muted-foreground font-normal">(local / non-containerised only)</span>
+            </Label>
+            <Select
+              value={form.yt_dlp_cookies_browser || '__none__'}
+              onValueChange={(v) => setForm({ ...form, yt_dlp_cookies_browser: !v || v === '__none__' ? '' : v })}
+            >
+              <SelectTrigger id="cookies-browser" className="w-48">
+                <SelectValue placeholder="Disabled" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Disabled</SelectItem>
+                <SelectItem value="chrome">Chrome</SelectItem>
+                <SelectItem value="chromium">Chromium</SelectItem>
+                <SelectItem value="firefox">Firefox</SelectItem>
+                <SelectItem value="edge">Edge</SelectItem>
+                <SelectItem value="brave">Brave</SelectItem>
+                <SelectItem value="opera">Opera</SelectItem>
+                <SelectItem value="vivaldi">Vivaldi</SelectItem>
+                <SelectItem value="safari">Safari (macOS)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              yt-dlp reads cookies directly from the selected browser&rsquo;s profile on the server machine.
+              Does not work in Docker containers or remote deployments.
+            </p>
+          </div>
+
+          {/* Cookies file */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cookies-file" className="text-sm">
+              Cookies file path{' '}
+              <span className="text-muted-foreground font-normal">(Netscape format)</span>
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="cookies-file"
+                placeholder="/path/to/cookies.txt"
+                value={form.yt_dlp_cookies_file}
+                onChange={(e) => setForm({ ...form, yt_dlp_cookies_file: e.target.value })}
+                className="flex-1"
+              />
+              <input
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                ref={cookiesFileRef}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUploadCookies(f);
+                  e.target.value = '';
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => cookiesFileRef.current?.click()}
+                disabled={uploadingCookies}
+              >
+                {uploadingCookies
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <Upload className="h-4 w-4" />}
+                <span className="ml-1.5">Upload</span>
+              </Button>
+              {form.yt_dlp_cookies_file && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={handleDeleteCookies}
+                  disabled={deletingCookies}
+                  title="Delete cookies file from server"
+                >
+                  {deletingCookies
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Trash2 className="h-4 w-4" />}
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Export from your browser with a cookies.txt extension (e.g.&nbsp;
+              <a
+                href="https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                yt-dlp cookie guide
+              </a>
+              ). Use <strong>Upload</strong> to push a local cookies.txt to the server — works for
+              remote and Docker deployments.
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -116,12 +116,12 @@ export default function AdsPage() {
       </div>
 
       <Tabs defaultValue="library">
-        <TabsList>
-          <TabsTrigger value="library">Ad Library</TabsTrigger>
-          <TabsTrigger value="placements" className="flex items-center gap-1.5">
+        <TabsList className="h-8 bg-muted/60 p-0.5 gap-0.5">
+          <TabsTrigger value="library" className="text-xs h-7 px-2.5">Ad Library</TabsTrigger>
+          <TabsTrigger value="placements" className="text-xs h-7 px-2.5 gap-1.5">
             Placements
             {placements.length > 0 && (
-              <Badge variant="secondary" className="text-xs px-1.5 py-0 h-4">
+              <Badge variant="secondary" className="text-xs px-1.5 py-0 h-4 min-w-[1.25rem]">
                 {placements.length}
               </Badge>
             )}

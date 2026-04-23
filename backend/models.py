@@ -11,6 +11,8 @@ class SettingsRequest(BaseModel):
     mongodb_db: str = "voyage_video_demo"
     mongodb_collection_videos: str = "videos"
     mongodb_collection_segments: str = "video_segments"
+    yt_dlp_cookies_browser: str = ""
+    yt_dlp_cookies_file: str = ""
 
 
 class SettingsResponse(BaseModel):
@@ -20,6 +22,8 @@ class SettingsResponse(BaseModel):
     mongodb_collection_videos: str
     mongodb_collection_segments: str
     settings_configured: bool
+    yt_dlp_cookies_browser: str = ""
+    yt_dlp_cookies_file: str = ""
 
 
 class ConnectionTestResult(BaseModel):

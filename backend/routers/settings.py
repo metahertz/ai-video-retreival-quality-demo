@@ -1,10 +1,10 @@
 import os
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File as FastAPIFile
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from ..config import get_settings, save_settings, mask_api_key, mask_uri
+from ..config import get_settings, save_settings, mask_api_key, mask_uri, COOKIES_PATH
 from ..database import get_client, reset_client, get_segments_collection, get_videos_collection
 from ..models import (
     SettingsRequest,
@@ -38,9 +38,7 @@ from ..services.atlas import (
 router = APIRouter()
 
 
-@router.get("", response_model=SettingsResponse)
-async def get_settings_endpoint():
-    s = get_settings()
+def _settings_response(s) -> SettingsResponse:
     return SettingsResponse(
         voyage_api_key_masked=mask_api_key(s.voyage_api_key),
         mongodb_uri_masked=mask_uri(s.mongodb_uri),
@@ -48,7 +46,14 @@ async def get_settings_endpoint():
         mongodb_collection_videos=s.mongodb_collection_videos,
         mongodb_collection_segments=s.mongodb_collection_segments,
         settings_configured=bool(s.voyage_api_key and s.mongodb_uri),
+        yt_dlp_cookies_browser=s.yt_dlp_cookies_browser,
+        yt_dlp_cookies_file=s.yt_dlp_cookies_file,
     )
+
+
+@router.get("", response_model=SettingsResponse)
+async def get_settings_endpoint():
+    return _settings_response(get_settings())
 
 
 @router.post("", response_model=SettingsResponse)
@@ -59,17 +64,11 @@ async def save_settings_endpoint(body: SettingsRequest):
         mongodb_db=body.mongodb_db,
         mongodb_collection_videos=body.mongodb_collection_videos,
         mongodb_collection_segments=body.mongodb_collection_segments,
+        yt_dlp_cookies_browser=body.yt_dlp_cookies_browser,
+        yt_dlp_cookies_file=body.yt_dlp_cookies_file,
     )
     reset_client()
-    s = get_settings()
-    return SettingsResponse(
-        voyage_api_key_masked=mask_api_key(s.voyage_api_key),
-        mongodb_uri_masked=mask_uri(s.mongodb_uri),
-        mongodb_db=s.mongodb_db,
-        mongodb_collection_videos=s.mongodb_collection_videos,
-        mongodb_collection_segments=s.mongodb_collection_segments,
-        settings_configured=bool(s.voyage_api_key and s.mongodb_uri),
-    )
+    return _settings_response(get_settings())
 
 
 @router.post("/test-connection", response_model=ConnectionTestResult)
@@ -116,6 +115,47 @@ async def test_connection(body: SettingsRequest):
         voyage_error=voyage_error,
         mongodb_error=mongodb_error,
     )
+
+
+@router.post("/upload-cookies")
+async def upload_cookies(file: UploadFile = FastAPIFile(...)):
+    """Upload a Netscape-format cookies.txt file to the server and configure it for yt-dlp."""
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+    COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COOKIES_PATH.write_bytes(contents)
+    s = get_settings()
+    save_settings(
+        voyage_api_key=s.voyage_api_key,
+        mongodb_uri=s.mongodb_uri,
+        mongodb_db=s.mongodb_db,
+        mongodb_collection_videos=s.mongodb_collection_videos,
+        mongodb_collection_segments=s.mongodb_collection_segments,
+        yt_dlp_cookies_browser=s.yt_dlp_cookies_browser,
+        yt_dlp_cookies_file=str(COOKIES_PATH),
+    )
+    reset_client()
+    return {"path": str(COOKIES_PATH), "bytes": len(contents)}
+
+
+@router.delete("/cookies")
+async def delete_cookies():
+    """Delete the uploaded cookies file and clear the yt-dlp cookies file setting."""
+    if COOKIES_PATH.exists():
+        COOKIES_PATH.unlink()
+    s = get_settings()
+    save_settings(
+        voyage_api_key=s.voyage_api_key,
+        mongodb_uri=s.mongodb_uri,
+        mongodb_db=s.mongodb_db,
+        mongodb_collection_videos=s.mongodb_collection_videos,
+        mongodb_collection_segments=s.mongodb_collection_segments,
+        yt_dlp_cookies_browser=s.yt_dlp_cookies_browser,
+        yt_dlp_cookies_file="",
+    )
+    reset_client()
+    return {"ok": True}
 
 
 @router.get("/index-capacity", response_model=IndexCapacityInfo)

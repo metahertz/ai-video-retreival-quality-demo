@@ -7,12 +7,26 @@ from typing import Optional
 
 import yt_dlp
 
+from ..config import get_settings
+
+
+def _cookie_opts() -> dict:
+    """Return yt-dlp cookie options based on current settings.
+    Cookies file takes priority over browser if both are configured."""
+    s = get_settings()
+    if s.yt_dlp_cookies_file:
+        return {"cookiefile": s.yt_dlp_cookies_file}
+    if s.yt_dlp_cookies_browser:
+        return {"cookiesfrombrowser": (s.yt_dlp_cookies_browser,)}
+    return {}
+
 
 def _build_search_opts() -> dict:
     return {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": True,
+        **_cookie_opts(),
     }
 
 
@@ -62,6 +76,7 @@ def _do_download(youtube_id: str, output_dir: str) -> dict:
         "merge_output_format": "mp4",
         "writeinfojson": True,
         "noplaylist": True,
+        **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -104,6 +119,7 @@ def _do_caption_download(youtube_id: str, output_dir: str) -> None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.extract_info(url, download=True)
