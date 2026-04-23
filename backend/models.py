@@ -170,6 +170,77 @@ class CompareSearchResponse(BaseModel):
     profiles: List[ProfileSearchResult]
 
 
+# ── Ads ───────────────────────────────────────────────────────────────────────
+
+class AdCreate(BaseModel):
+    title: str
+    description: str
+    duration_seconds: int = Field(default=10, ge=1, le=30)
+    emotion_tags: List[str] = ["positive", "neutral", "intense"]
+
+
+class AdUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    duration_seconds: Optional[int] = Field(default=None, ge=1, le=30)
+    emotion_tags: Optional[List[str]] = None
+
+
+class AdResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    duration_seconds: int
+    emotion_tags: List[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdMatchSegment(BaseModel):
+    segment_id: str
+    video_id: str
+    video_title: str
+    youtube_id: str
+    segment_index: int
+    start_time: float
+    end_time: float
+    caption_text: Optional[str] = None
+    match_score: float
+    emotion_dominant: Optional[str] = None
+    emotion_compatible: Optional[bool] = None  # None = video not yet scored
+    thumbnail_url: Optional[str] = None
+
+
+class PlacementCreate(BaseModel):
+    ad_id: str
+    segment_id: str
+    video_id: str
+    segment_index: int
+    start_time: float
+    match_score: float
+
+
+class PlacementResponse(BaseModel):
+    id: str
+    ad_id: str
+    ad_title: str
+    ad_description: str
+    duration_seconds: int
+    segment_id: str
+    video_id: str
+    video_title: str
+    segment_index: int
+    start_time: float
+    match_score: float
+    created_at: datetime
+
+
+class EmotionScoreResult(BaseModel):
+    scored: int
+    skipped: int
+    message: str
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def serialize_doc(doc: dict) -> dict:

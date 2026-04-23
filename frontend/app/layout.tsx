@@ -3,7 +3,7 @@ import { Inter } from 'next/font/google';
 import Link from 'next/link';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
-import { Settings, Video, Search, Layers } from 'lucide-react';
+import { Settings, Video, Search, Layers, Megaphone } from 'lucide-react';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -15,6 +15,7 @@ export const metadata: Metadata = {
 const navItems = [
   { href: '/search', label: 'Search', icon: Search },
   { href: '/videos', label: 'Videos', icon: Video },
+  { href: '/ads', label: 'Ads', icon: Megaphone },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

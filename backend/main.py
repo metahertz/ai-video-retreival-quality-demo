@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import settings, videos, process, search
+from .routers import settings, videos, process, search, ads
 
 VIDEOS_DIR = str(Path(__file__).parent / "videos")
 
@@ -42,6 +42,7 @@ app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(videos.router, prefix="/api/videos", tags=["Videos"])
 app.include_router(process.router, prefix="/api/process", tags=["Process"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
+app.include_router(ads.router, prefix="/api/ads", tags=["Ads"])
 
 
 @app.get("/health")

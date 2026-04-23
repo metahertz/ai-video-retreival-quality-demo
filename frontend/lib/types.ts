@@ -147,3 +147,76 @@ export interface CompareSearchResponse {
   query: string;
   profiles: ProfileSearchResult[];
 }
+
+// ── Ads ───────────────────────────────────────────────────────────────────────
+
+export type EmotionTag = 'positive' | 'neutral' | 'intense' | 'negative';
+
+export interface AdCreate {
+  title: string;
+  description: string;
+  duration_seconds: number;
+  emotion_tags: EmotionTag[];
+}
+
+export interface AdUpdate {
+  title?: string;
+  description?: string;
+  duration_seconds?: number;
+  emotion_tags?: EmotionTag[];
+}
+
+export interface AdResponse {
+  id: string;
+  title: string;
+  description: string;
+  duration_seconds: number;
+  emotion_tags: EmotionTag[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdMatchSegment {
+  segment_id: string;
+  video_id: string;
+  video_title: string;
+  youtube_id: string;
+  segment_index: number;
+  start_time: number;
+  end_time: number;
+  caption_text: string | null;
+  match_score: number;
+  emotion_dominant: string | null;
+  emotion_compatible: boolean | null;
+  thumbnail_url: string | null;
+}
+
+export interface PlacementCreate {
+  ad_id: string;
+  segment_id: string;
+  video_id: string;
+  segment_index: number;
+  start_time: number;
+  match_score: number;
+}
+
+export interface PlacementResponse {
+  id: string;
+  ad_id: string;
+  ad_title: string;
+  ad_description: string;
+  duration_seconds: number;
+  segment_id: string;
+  video_id: string;
+  video_title: string;
+  segment_index: number;
+  start_time: number;
+  match_score: number;
+  created_at: string;
+}
+
+export interface EmotionScoreResult {
+  scored: number;
+  skipped: number;
+  message: string;
+}

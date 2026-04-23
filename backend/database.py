@@ -28,3 +28,13 @@ async def get_videos_collection() -> AsyncIOMotorCollection:
 async def get_segments_collection() -> AsyncIOMotorCollection:
     settings = get_settings()
     return get_client()[settings.mongodb_db][settings.mongodb_collection_segments]
+
+
+async def get_ads_collection() -> AsyncIOMotorCollection:
+    settings = get_settings()
+    return get_client()[settings.mongodb_db]["ads"]
+
+
+async def get_placements_collection() -> AsyncIOMotorCollection:
+    settings = get_settings()
+    return get_client()[settings.mongodb_db]["ad_placements"]

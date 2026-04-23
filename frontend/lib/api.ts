@@ -1,11 +1,18 @@
 import type {
+  AdCreate,
+  AdMatchSegment,
+  AdResponse,
+  AdUpdate,
   AllIndexStatusResponse,
   CompareSearchRequest,
   CompareSearchResponse,
   ConnectionTestResult,
   CreateIndexesResult,
+  EmotionScoreResult,
   IndexCapacityInfo,
   IndexStatusResponse,
+  PlacementCreate,
+  PlacementResponse,
   ProcessJobStatus,
   ProcessRequest,
   SearchRequest,
@@ -28,6 +35,23 @@ async function apiGet<T>(path: string): Promise<T> {
 async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let detail = text;
+    try {
+      detail = JSON.parse(text)?.detail ?? text;
+    } catch {}
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -98,4 +122,21 @@ export const searchApi = {
   search: (body: SearchRequest) => apiPost<SearchResult[]>('/api/search', body),
   compare: (body: CompareSearchRequest) =>
     apiPost<CompareSearchResponse>('/api/search/compare', body),
+};
+
+// ── Ads ───────────────────────────────────────────────────────────────────────
+
+export const adsApi = {
+  list: () => apiGet<AdResponse[]>('/api/ads'),
+  get: (id: string) => apiGet<AdResponse>(`/api/ads/${id}`),
+  create: (body: AdCreate) => apiPost<AdResponse>('/api/ads', body),
+  update: (id: string, body: AdUpdate) => apiPut<AdResponse>(`/api/ads/${id}`, body),
+  delete: (id: string) => apiDelete(`/api/ads/${id}`),
+  match: (id: string, limit = 10) =>
+    apiPost<AdMatchSegment[]>(`/api/ads/${id}/match?limit=${limit}`),
+  scoreEmotions: () => apiPost<EmotionScoreResult>('/api/ads/score-emotions'),
+  listPlacements: () => apiGet<PlacementResponse[]>('/api/ads/placements'),
+  createPlacement: (body: PlacementCreate) =>
+    apiPost<PlacementResponse>('/api/ads/placements', body),
+  deletePlacement: (id: string) => apiDelete(`/api/ads/placements/${id}`),
 };
