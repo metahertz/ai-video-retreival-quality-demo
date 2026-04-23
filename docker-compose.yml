@@ -7,10 +7,17 @@ services:
     # Ports bind to the host directly — no mapping needed.
     network_mode: host
     volumes:
-      # Full repo bind-mount — backend/videos lives here on the host
+      # Full repo bind-mount for source code / config
       - .:/app
+      # Named volume for downloaded videos and thumbnails — persists across
+      # container recreates and image rebuilds.  Shadows the bind-mount for
+      # this subdirectory so video data survives a `docker compose pull`.
+      - videos_data:/app/backend/videos
     environment:
-      # BACKEND_URL is server-side only — used by Next.js rewrites to proxy
-      # /api/* to the backend. Never exposed to the browser.
+      # BACKEND_URL is server-side only — used by the Next.js API proxy route
+      # to reach the FastAPI backend. Never exposed to the browser.
       - BACKEND_URL=${BACKEND_URL:-http://localhost:8001}
     restart: unless-stopped
+
+volumes:
+  videos_data:

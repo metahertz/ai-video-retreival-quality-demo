@@ -111,6 +111,7 @@ class VideoResponse(BaseModel):
     segment_count: int
     chunking_strategy: Optional[str] = None
     error_message: Optional[str] = None
+    file_missing: bool = False  # True when file_path is set but absent on disk
 
 
 # ── Processing ────────────────────────────────────────────────────────────────

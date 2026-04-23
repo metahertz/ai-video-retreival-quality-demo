@@ -32,12 +32,13 @@ def set_videos_dir(path: str) -> None:
 
 def _doc_to_response(doc: dict) -> VideoResponse:
     doc = serialize_doc(doc)
+    file_path = doc.get("file_path", "")
     return VideoResponse(
         id=doc["_id"],
         title=doc["title"],
         youtube_id=doc["youtube_id"],
         youtube_url=doc["youtube_url"],
-        file_path=doc.get("file_path", ""),
+        file_path=file_path,
         duration=doc.get("duration", 0.0),
         thumbnail_url=doc.get("thumbnail_url", ""),
         status=doc.get("status", "downloaded"),
@@ -45,6 +46,7 @@ def _doc_to_response(doc: dict) -> VideoResponse:
         segment_count=doc.get("segment_count", 0),
         chunking_strategy=doc.get("chunking_strategy"),
         error_message=doc.get("error_message"),
+        file_missing=bool(file_path and not os.path.exists(file_path)),
     )
 
 

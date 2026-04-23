@@ -93,6 +93,7 @@ export interface VideoResponse {
   segment_count: number;
   chunking_strategy: string | null;
   error_message: string | null;
+  file_missing?: boolean;
 }
 
 export interface ProcessRequest {

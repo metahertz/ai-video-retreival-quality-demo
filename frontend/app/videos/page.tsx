@@ -12,7 +12,7 @@ import { videosApi, processApi } from '@/lib/api';
 import type { YouTubeSearchResult, VideoResponse, ProcessJobStatus } from '@/lib/types';
 import {
   Search, Download, Loader2, Play, Trash2, Clock,
-  AlertCircle, CheckCircle2, RefreshCw, Film, Layers, Sparkles, Activity,
+  AlertCircle, CheckCircle2, RefreshCw, Film, Layers, Sparkles, Activity, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -205,6 +205,15 @@ function LibraryCard({ video, isDeleting, onProcess, onViewProgress, onDelete }:
           </p>
         )}
 
+        {video.file_missing && (
+          <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-300/60 dark:border-amber-700/40 px-2.5 py-2 flex items-start gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
+              Video file missing on server. Delete this record and re-download to restore.
+            </p>
+          </div>
+        )}
+
         <div className="flex gap-1.5 pt-0.5">
           {video.status === 'processing' ? (
             <Button
@@ -222,6 +231,8 @@ function LibraryCard({ video, isDeleting, onProcess, onViewProgress, onDelete }:
               variant="outline"
               className="flex-1 text-xs h-8"
               onClick={onProcess}
+              disabled={!!video.file_missing}
+              title={video.file_missing ? 'Video file missing — delete and re-download first' : undefined}
             >
               <Sparkles className="h-3.5 w-3.5 mr-1" />
               {video.status === 'completed' ? 'Re-embed' : 'Embed'}
