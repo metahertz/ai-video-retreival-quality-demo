@@ -12,6 +12,10 @@ fi
 # ── videos directory ──────────────────────────────────────────────────────────
 mkdir -p /app/backend/videos
 
+# ── yt-dlp update ────────────────────────────────────────────────────────────
+echo "[entrypoint] Updating yt-dlp to latest version"
+pip install --quiet --upgrade yt-dlp
+
 # ── frontend build ────────────────────────────────────────────────────────────
 # Build at container start so that NEXT_PUBLIC_API_URL (and any other
 # NEXT_PUBLIC_* vars set in docker-compose) are baked into the bundle.
