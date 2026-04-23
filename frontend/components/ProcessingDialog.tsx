@@ -16,13 +16,14 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { processApi } from '@/lib/api';
 import type { VideoResponse, ProcessJobStatus } from '@/lib/types';
-import { Loader2, CheckCircle2, XCircle, Info } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Info, StopCircle, Ban } from 'lucide-react';
 
 interface ProcessingDialogProps {
   video: VideoResponse | null;
   open: boolean;
   onClose: () => void;
   onComplete: () => void;
+  initialJob?: ProcessJobStatus | null;
 }
 
 const STRATEGIES = [
@@ -50,20 +51,22 @@ const STRATEGIES = [
 
 type Strategy = (typeof STRATEGIES)[number]['value'];
 
-export function ProcessingDialog({ video, open, onClose, onComplete }: ProcessingDialogProps) {
+export function ProcessingDialog({ video, open, onClose, onComplete, initialJob }: ProcessingDialogProps) {
   const [strategy, setStrategy] = useState<Strategy>('caption');
   const [intervalSecs, setIntervalSecs] = useState(30);
   const [job, setJob] = useState<ProcessJobStatus | null>(null);
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Reset when dialog opens with a new video
+  // Reset when dialog opens; pre-load job if provided
   useEffect(() => {
     if (open) {
-      setJob(null);
+      setJob(initialJob ?? null);
       setStarting(false);
+      setStopping(false);
     }
-  }, [open, video?.id]);
+  }, [open, video?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll job status
   useEffect(() => {
@@ -72,7 +75,7 @@ export function ProcessingDialog({ video, open, onClose, onComplete }: Processin
         try {
           const updated = await processApi.getStatus(job.job_id);
           setJob(updated);
-          if (updated.status === 'completed' || updated.status === 'error') {
+          if (updated.status === 'completed' || updated.status === 'error' || updated.status === 'cancelled') {
             clearInterval(pollRef.current!);
             if (updated.status === 'completed') {
               onComplete();
@@ -84,7 +87,7 @@ export function ProcessingDialog({ video, open, onClose, onComplete }: Processin
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [job?.job_id, job?.status]);
+  }, [job?.job_id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStart = async () => {
     if (!video) return;
@@ -99,7 +102,7 @@ export function ProcessingDialog({ video, open, onClose, onComplete }: Processin
     } catch (e: any) {
       setJob({
         job_id: '',
-        video_id: video.id,
+        video_id: video?.id ?? '',
         status: 'error',
         progress: 0,
         message: e.message || 'Failed to start processing',
@@ -111,12 +114,25 @@ export function ProcessingDialog({ video, open, onClose, onComplete }: Processin
     }
   };
 
+  const handleStop = async () => {
+    if (!job?.job_id) return;
+    setStopping(true);
+    try {
+      await processApi.cancelJob(job.job_id);
+      // Next poll will pick up the cancelled status
+    } catch {}
+    finally {
+      setStopping(false);
+    }
+  };
+
   const isRunning = job?.status === 'pending' || job?.status === 'processing';
   const isDone = job?.status === 'completed';
   const isError = job?.status === 'error';
+  const isCancelled = job?.status === 'cancelled';
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v && !isRunning) onClose(); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base">Process Video</DialogTitle>
@@ -173,9 +189,10 @@ export function ProcessingDialog({ video, open, onClose, onComplete }: Processin
         {job && (
           <div className="space-y-4 py-2">
             <div className="flex items-center gap-2">
-              {isRunning && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-              {isDone && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-              {isError && <XCircle className="h-4 w-4 text-destructive" />}
+              {isRunning   && <Loader2    className="h-4 w-4 animate-spin text-primary" />}
+              {isDone      && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+              {isError     && <XCircle    className="h-4 w-4 text-destructive" />}
+              {isCancelled && <Ban        className="h-4 w-4 text-muted-foreground" />}
               <span className="text-sm font-medium capitalize">{job.status}</span>
             </div>
 
@@ -213,7 +230,18 @@ export function ProcessingDialog({ video, open, onClose, onComplete }: Processin
               </Button>
             </>
           )}
-          {(isDone || isError) && (
+          {isRunning && (
+            <>
+              <Button variant="outline" onClick={onClose}>Close</Button>
+              <Button variant="destructive" onClick={handleStop} disabled={stopping}>
+                {stopping
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <StopCircle className="mr-2 h-4 w-4" />}
+                Stop
+              </Button>
+            </>
+          )}
+          {(isDone || isError || isCancelled) && (
             <Button onClick={onClose}>{isDone ? 'Done' : 'Close'}</Button>
           )}
         </DialogFooter>

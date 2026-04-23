@@ -8,11 +8,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProcessingDialog } from '@/components/ProcessingDialog';
-import { videosApi } from '@/lib/api';
-import type { YouTubeSearchResult, VideoResponse } from '@/lib/types';
+import { videosApi, processApi } from '@/lib/api';
+import type { YouTubeSearchResult, VideoResponse, ProcessJobStatus } from '@/lib/types';
 import {
   Search, Download, Loader2, Play, Trash2, Clock,
-  AlertCircle, CheckCircle2, RefreshCw, Film, Layers, Sparkles,
+  AlertCircle, CheckCircle2, RefreshCw, Film, Layers, Sparkles, Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -122,10 +122,11 @@ interface LibraryCardProps {
   video: VideoResponse;
   isDeleting: boolean;
   onProcess: () => void;
+  onViewProgress: () => void;
   onDelete: () => void;
 }
 
-function LibraryCard({ video, isDeleting, onProcess, onDelete }: LibraryCardProps) {
+function LibraryCard({ video, isDeleting, onProcess, onViewProgress, onDelete }: LibraryCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -155,9 +156,13 @@ function LibraryCard({ video, isDeleting, onProcess, onDelete }: LibraryCardProp
 
         {/* Status overlay for non-complete states */}
         {video.status === 'processing' && (
-          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1.5">
+          <div
+            className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1.5 cursor-pointer"
+            onClick={onViewProgress}
+          >
             <Loader2 className="h-6 w-6 text-white animate-spin" />
             <span className="text-xs text-white/90 font-medium">Processing…</span>
+            <span className="text-xs text-white/60">Click for details</span>
           </div>
         )}
 
@@ -201,16 +206,27 @@ function LibraryCard({ video, isDeleting, onProcess, onDelete }: LibraryCardProp
         )}
 
         <div className="flex gap-1.5 pt-0.5">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 text-xs h-8"
-            onClick={onProcess}
-            disabled={video.status === 'processing'}
-          >
-            <Sparkles className="h-3.5 w-3.5 mr-1" />
-            {video.status === 'completed' ? 'Re-embed' : 'Embed'}
-          </Button>
+          {video.status === 'processing' ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs h-8"
+              onClick={onViewProgress}
+            >
+              <Activity className="h-3.5 w-3.5 mr-1" />
+              View Progress
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs h-8"
+              onClick={onProcess}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1" />
+              {video.status === 'completed' ? 'Re-embed' : 'Embed'}
+            </Button>
+          )}
           <Button
             size="sm"
             variant={confirmDelete ? 'destructive' : 'ghost'}
@@ -245,6 +261,7 @@ export default function VideosPage() {
   const [myVideos, setMyVideos] = useState<VideoResponse[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(true);
   const [processTarget, setProcessTarget] = useState<VideoResponse | null>(null);
+  const [processInitialJob, setProcessInitialJob] = useState<ProcessJobStatus | null>(null);
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -320,6 +337,17 @@ export default function VideosPage() {
     } finally {
       setDeleting((prev) => { const s = new Set(prev); s.delete(video.id); return s; });
     }
+  };
+
+  const handleViewProgress = async (video: VideoResponse) => {
+    try {
+      const jobs = await processApi.listVideoJobs(video.id);
+      const active = jobs.find((j) => j.status === 'pending' || j.status === 'processing');
+      setProcessInitialJob(active ?? null);
+    } catch {
+      setProcessInitialJob(null);
+    }
+    setProcessTarget(video);
   };
 
   const isDownloaded = (youtubeId: string) => myVideos.some((v) => v.youtube_id === youtubeId);
@@ -480,7 +508,8 @@ export default function VideosPage() {
                   key={video.id}
                   video={video}
                   isDeleting={deleting.has(video.id)}
-                  onProcess={() => setProcessTarget(video)}
+                  onProcess={() => { setProcessInitialJob(null); setProcessTarget(video); }}
+                  onViewProgress={() => handleViewProgress(video)}
                   onDelete={() => handleDelete(video)}
                 />
               ))}
@@ -493,10 +522,16 @@ export default function VideosPage() {
       <ProcessingDialog
         video={processTarget}
         open={!!processTarget}
-        onClose={() => setProcessTarget(null)}
+        initialJob={processInitialJob}
+        onClose={() => {
+          setProcessTarget(null);
+          setProcessInitialJob(null);
+          loadMyVideos(true);
+        }}
         onComplete={async () => {
           await loadMyVideos(true);
           setProcessTarget(null);
+          setProcessInitialJob(null);
         }}
       />
     </div>

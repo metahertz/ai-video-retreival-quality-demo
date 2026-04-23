@@ -18,6 +18,7 @@ from ..models import (
     serialize_doc,
 )
 from ..services.youtube import search_youtube, download_video, find_downloaded_file
+from .process import cancel_video_jobs
 
 router = APIRouter()
 
@@ -129,6 +130,9 @@ async def delete_video(video_id: str):
     doc = await videos_col.find_one({"_id": ObjectId(video_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Video not found")
+
+    # Cancel any active processing jobs before deleting
+    cancel_video_jobs(video_id)
 
     # Delete segment files on disk
     segments = await segments_col.find({"video_id": video_id}).to_list(10000)

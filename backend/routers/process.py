@@ -27,6 +27,8 @@ router = APIRouter()
 
 # In-memory job store (acceptable for demo; lost on restart)
 _jobs: dict[str, ProcessJobStatus] = {}
+# Job IDs pending cancellation
+_cancelled: set[str] = set()
 
 VIDEOS_DIR: str | None = None
 
@@ -39,6 +41,16 @@ BASE_BACKOFF_SECONDS = 2.0  # doubles each retry, plus jitter
 def set_videos_dir(path: str) -> None:
     global VIDEOS_DIR
     VIDEOS_DIR = path
+
+
+def cancel_video_jobs(video_id: str) -> int:
+    """Cancel all active jobs for a video. Returns count of jobs cancelled."""
+    count = 0
+    for job_id, job in _jobs.items():
+        if job.video_id == video_id and job.status in ("pending", "processing"):
+            _cancelled.add(job_id)
+            count += 1
+    return count
 
 
 @router.post("", response_model=ProcessJobStatus)
@@ -68,6 +80,17 @@ async def get_job_status(job_id: str):
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.post("/{job_id}/cancel", response_model=ProcessJobStatus)
+async def cancel_job(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in ("pending", "processing"):
+        raise HTTPException(status_code=409, detail=f"Job is already {job.status}")
+    _cancelled.add(job_id)
     return job
 
 
@@ -207,6 +230,12 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
 
         async def _embed_one(orig_index: int, chunk: dict) -> None:
             nonlocal completed_count, skipped_embed
+            # Fast-path skip if job was cancelled before we acquire the semaphore
+            if job_id in _cancelled:
+                completed_count += 1
+                if total > 0:
+                    _upd(progress=completed_count / total)
+                return
             try:
                 # Generate thumbnail (best-effort — never fails the segment)
                 midpoint = (chunk["start"] + chunk["end"]) / 2
@@ -248,6 +277,20 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
                     )
 
         await asyncio.gather(*[_embed_one(i, chunk) for i, chunk in valid_chunks])
+
+        if job_id in _cancelled:
+            _cancelled.discard(job_id)
+            # Roll back any partial segments so the video is in a clean state
+            await segments_col.delete_many({"video_id": request.video_id})
+            await videos_col.update_one(
+                {"_id": ObjectId(request.video_id)},
+                {"$set": {"status": "downloaded", "segment_count": 0, "chunking_strategy": None}},
+            )
+            _upd(
+                status="cancelled",
+                message=f"Cancelled — {job.segments_processed} segment(s) embedded before stopping",
+            )
+            return
 
         total_skipped = skipped_pre + skipped_embed
         await videos_col.update_one(

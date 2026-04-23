@@ -112,6 +112,7 @@ export const videosApi = {
 export const processApi = {
   start: (body: ProcessRequest) => apiPost<ProcessJobStatus>('/api/process', body),
   getStatus: (jobId: string) => apiGet<ProcessJobStatus>(`/api/process/${jobId}`),
+  cancelJob: (jobId: string) => apiPost<ProcessJobStatus>(`/api/process/${jobId}/cancel`),
   listVideoJobs: (videoId: string) =>
     apiGet<ProcessJobStatus[]>(`/api/process/video/${videoId}/jobs`),
 };

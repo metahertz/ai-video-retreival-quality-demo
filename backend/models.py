@@ -120,7 +120,7 @@ class ProcessRequest(BaseModel):
 class ProcessJobStatus(BaseModel):
     job_id: str
     video_id: str
-    status: Literal["pending", "processing", "completed", "error"]
+    status: Literal["pending", "processing", "completed", "error", "cancelled"]
     progress: float = 0.0  # 0.0 – 1.0
     message: str = ""
     segments_processed: int = 0

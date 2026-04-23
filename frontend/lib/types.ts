@@ -100,7 +100,7 @@ export interface ProcessRequest {
 export interface ProcessJobStatus {
   job_id: string;
   video_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelled';
   progress: number;
   message: string;
   segments_processed: number;
