@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const backendUrl = process.env.BACKEND_URL || 'http://localhost:8001';
-
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -10,14 +8,8 @@ const nextConfig = {
       { protocol: 'https', hostname: 'i9.ytimg.com' },
     ],
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
-      },
-    ];
-  },
+  // /api/* is handled by app/api/[...path]/route.ts which properly proxies
+  // to the FastAPI backend, preserving Range headers and streaming responses.
 };
 
 export default nextConfig;
