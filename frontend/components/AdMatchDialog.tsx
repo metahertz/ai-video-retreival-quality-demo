@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { adsApi } from '@/lib/api';
-import type { AdMatchSegment, AdResponse, EmotionTag } from '@/lib/types';
+import type { AdMatchSegment, AdResponse } from '@/lib/types';
 import {
   Loader2, Film, Check, X, HelpCircle, RefreshCw,
 } from 'lucide-react';
@@ -67,6 +67,7 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
     if (open && ad) {
       setSavedIds(new Set());
       setResults([]);
+      setThumbErrors(new Set());
       runMatch();
     }
   }, [open, ad]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -97,13 +98,19 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] flex flex-col">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Match Segments — {ad.title}</DialogTitle>
+      {/*
+        Full-viewport dialog: override shadcn's max-w-lg, p-6, gap-4 entirely.
+        We manage padding per-section so the results grid gets all available space.
+      */}
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-none sm:max-w-none h-[calc(100vh-2rem)] max-h-none flex flex-col gap-0 p-0 overflow-hidden">
+
+        {/* ── Header ── */}
+        <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
+          <DialogTitle className="text-base">Match Segments — {ad.title}</DialogTitle>
         </DialogHeader>
 
-        {/* Ad preview */}
-        <div className="shrink-0 rounded-lg border bg-muted/30 px-4 py-3 space-y-1.5">
+        {/* ── Ad preview ── */}
+        <div className="shrink-0 mx-6 mt-4 rounded-lg border bg-muted/30 px-4 py-3 space-y-1.5">
           <p className="text-sm leading-relaxed text-foreground">&ldquo;{ad.description}&rdquo;</p>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary" className="text-xs">{ad.duration_seconds}s overlay</Badge>
@@ -116,8 +123,8 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="shrink-0 flex items-center gap-4 flex-wrap">
+        {/* ── Controls ── */}
+        <div className="shrink-0 mx-6 mt-3 mb-1 flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">Results: {limit}</Label>
             <Slider
@@ -134,33 +141,37 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
             <span className="ml-1.5">{loading ? 'Matching…' : 'Re-run'}</span>
           </Button>
           {results.length > 0 && !loading && (
-            <span className="text-xs text-muted-foreground">{results.length} segment{results.length !== 1 ? 's' : ''} found</span>
+            <span className="text-xs text-muted-foreground">
+              {results.length} segment{results.length !== 1 ? 's' : ''} found
+            </span>
           )}
         </div>
 
-        {/* Results */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        {/* ── Results ── */}
+        <div className="flex-1 overflow-y-auto min-h-0 px-6 pb-6 pt-3">
           {loading && (
-            <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+            <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               <span className="text-sm">Finding matching segments…</span>
             </div>
           )}
 
           {!loading && results.length === 0 && (
-            <div className="text-center py-16 text-muted-foreground text-sm">
+            <div className="text-center py-20 text-muted-foreground text-sm">
               No results yet — click Re-run to search.
             </div>
           )}
 
           {!loading && results.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pb-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {results.map((seg) => {
                 const saved = savedIds.has(seg.segment_id);
                 const isSaving = savingId === seg.segment_id;
                 const thumbOk = !!seg.thumbnail_url && !thumbErrors.has(seg.segment_id);
+
                 return (
                   <div key={seg.segment_id} className="rounded-lg border bg-card overflow-hidden flex flex-col">
+
                     {/* Thumbnail */}
                     <div className="relative aspect-video bg-muted shrink-0">
                       {thumbOk ? (
@@ -175,11 +186,13 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
                           <Film className="h-8 w-8 text-muted-foreground/30" />
                         </div>
                       )}
-                      {/* Score badge */}
+
+                      {/* Match score badge — top right */}
                       <span className="absolute top-1.5 right-1.5 rounded-full bg-emerald-600 text-white text-xs px-1.5 py-0.5 font-medium">
                         {Math.round(seg.match_score * 100)}%
                       </span>
-                      {/* Emotion compatible badge */}
+
+                      {/* Emotion compatible badge — top left */}
                       <span className="absolute top-1.5 left-1.5">
                         {seg.emotion_compatible === true && (
                           <span className="flex items-center justify-center h-5 w-5 rounded-full bg-emerald-600/90">
@@ -199,9 +212,10 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
                       </span>
                     </div>
 
-                    {/* Info */}
-                    <div className="p-3 flex flex-col gap-2 flex-1">
+                    {/* Card body */}
+                    <div className="p-2.5 flex flex-col gap-1.5 flex-1">
                       <p className="text-xs font-medium line-clamp-2 leading-snug">{seg.video_title}</p>
+
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs text-muted-foreground font-mono">
                           {formatTime(seg.start_time)}–{formatTime(seg.end_time)}
@@ -216,9 +230,13 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
                           </span>
                         )}
                       </div>
+
                       {seg.caption_text && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 leading-snug">{seg.caption_text}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2 leading-snug">
+                          {seg.caption_text}
+                        </p>
                       )}
+
                       <Button
                         size="sm"
                         variant={saved ? 'secondary' : 'default'}
@@ -230,12 +248,14 @@ export default function AdMatchDialog({ open, onClose, ad, onPlacementSaved }: A
                         {saved ? 'Placed' : 'Place Ad Here'}
                       </Button>
                     </div>
+
                   </div>
                 );
               })}
             </div>
           )}
         </div>
+
       </DialogContent>
     </Dialog>
   );
