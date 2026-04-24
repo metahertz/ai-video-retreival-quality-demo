@@ -112,6 +112,19 @@ export const videosApi = {
     apiPost<YouTubeSearchResult[]>('/api/videos/search', { query, max_results: maxResults }),
   download: (youtubeId: string) =>
     apiPost<VideoResponse>('/api/videos/download', { youtube_id: youtubeId }),
+  upload: async (file: File, title: string): Promise<VideoResponse> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('title', title);
+    const res = await fetch('/api/videos/upload', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const text = await res.text();
+      let detail = text;
+      try { detail = JSON.parse(text)?.detail ?? text; } catch {}
+      throw new Error(detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
   delete: (id: string) => apiDelete(`/api/videos/${id}`),
   streamUrl: (videoId: string) => `/api/videos/${videoId}/stream`,
   segmentStreamUrl: (videoId: string, segIndex: number) =>

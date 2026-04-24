@@ -8,11 +8,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProcessingDialog } from '@/components/ProcessingDialog';
+import { VideoUploadDialog } from '@/components/VideoUploadDialog';
 import { videosApi, processApi } from '@/lib/api';
 import type { YouTubeSearchResult, VideoResponse, ProcessJobStatus } from '@/lib/types';
 import {
-  Search, Download, Loader2, Play, Trash2, Clock,
-  AlertCircle, CheckCircle2, RefreshCw, Film, Layers, Sparkles, Activity, AlertTriangle,
+  Search, Download, Loader2, Trash2,
+  AlertCircle, CheckCircle2, RefreshCw, Film, Layers, Sparkles, Activity, AlertTriangle, Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -209,7 +210,7 @@ function LibraryCard({ video, isDeleting, onProcess, onViewProgress, onDelete }:
           <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-300/60 dark:border-amber-700/40 px-2.5 py-2 flex items-start gap-2">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
-              Video file missing on server. Delete this record and re-download to restore.
+              Video file not found locally or in GridFS. Delete and re-download to restore.
             </p>
           </div>
         )}
@@ -274,6 +275,7 @@ export default function VideosPage() {
   const [processTarget, setProcessTarget] = useState<VideoResponse | null>(null);
   const [processInitialJob, setProcessInitialJob] = useState<ProcessJobStatus | null>(null);
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const [uploadOpen, setUploadOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadMyVideos = useCallback(async (silent = false) => {
@@ -476,15 +478,25 @@ export default function VideosPage() {
                 </span>
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => loadMyVideos()}
-              disabled={loadingVideos}
-            >
-              <RefreshCw className={`h-4 w-4 mr-1.5 ${loadingVideos ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setUploadOpen(true)}
+              >
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                Upload Local File
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => loadMyVideos()}
+                disabled={loadingVideos}
+              >
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${loadingVideos ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {loadingVideos ? (
@@ -505,12 +517,18 @@ export default function VideosPage() {
               <Film className="h-10 w-10 mx-auto mb-3 opacity-20" />
               <p className="text-sm font-medium">No videos yet</p>
               <p className="text-xs mt-1 mb-4 opacity-70">
-                Search YouTube and download a video to get started
+                Search YouTube, or upload a local video file
               </p>
-              <Button size="sm" variant="outline" onClick={() => setActiveTab('search')}>
-                <Search className="h-3.5 w-3.5 mr-1.5" />
-                Search YouTube
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('search')}>
+                  <Search className="h-3.5 w-3.5 mr-1.5" />
+                  Search YouTube
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}>
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  Upload File
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -528,6 +546,18 @@ export default function VideosPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Upload dialog */}
+      <VideoUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={(video) => {
+          setMyVideos((vs) => [video, ...vs]);
+          setUploadOpen(false);
+          setActiveTab('library');
+          import('sonner').then(({ toast }) => toast.success(`"${video.title}" added to library`));
+        }}
+      />
 
       {/* Processing dialog */}
       <ProcessingDialog

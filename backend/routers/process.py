@@ -1,6 +1,7 @@
 import asyncio
 import os
 import random
+import shutil
 import uuid
 from datetime import datetime, timezone
 
@@ -9,7 +10,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 import voyageai.error as voyage_errors
 
-from ..database import get_videos_collection, get_segments_collection
+from ..database import (
+    get_videos_collection,
+    get_segments_collection,
+    get_video_bucket,
+    get_segment_bucket,
+    gridfs_upload,
+    gridfs_download,
+)
 from ..models import ProcessRequest, ProcessJobStatus
 from ..services.video_processing import (
     check_file_size,
@@ -105,7 +113,6 @@ def _is_retryable(exc: Exception) -> bool:
     """True for rate-limit (429) and transient server errors worth retrying."""
     if isinstance(exc, (voyage_errors.RateLimitError, voyage_errors.ServiceUnavailableError)):
         return True
-    # Catch-all: look for 429 / 503 in string representation
     msg = str(exc).lower()
     return "429" in msg or "rate" in msg or "too many requests" in msg or "503" in msg
 
@@ -124,8 +131,6 @@ async def _embed_with_backoff(chunk: dict, semaphore: asyncio.Semaphore) -> tupl
                 last_exc = e
                 if not _is_retryable(e) or attempt >= MAX_RETRIES - 1:
                     raise
-                # Fall through — semaphore released by context-manager exit
-        # Sleep outside the semaphore so other tasks can proceed
         wait = BASE_BACKOFF_SECONDS * (2 ** attempt) + random.uniform(0, 1.5)
         await asyncio.sleep(wait)
 
@@ -140,6 +145,9 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
     videos_col = await get_videos_collection()
     segments_col = await get_segments_collection()
 
+    temp_dir: str | None = None           # set if we pulled the video from GridFS
+    pulled_from_gridfs = False            # True when temp_dir was created
+
     def _upd(**kwargs) -> None:
         for k, v in kwargs.items():
             setattr(job, k, v)
@@ -152,14 +160,30 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
         )
 
         video_doc = await videos_col.find_one({"_id": ObjectId(request.video_id)})
-        video_path = video_doc["file_path"]
+        stored_path = video_doc.get("file_path", "")
         youtube_id = video_doc.get("youtube_id", "")
+        video_gridfs_id = video_doc.get("gridfs_file_id")
 
-        if not os.path.exists(video_path):
-            raise FileNotFoundError(f"Video file not found: {video_path}")
+        # ── Ensure video file is available locally ────────────────────────────
+        if stored_path and os.path.exists(stored_path):
+            video_path = stored_path
+        elif video_gridfs_id:
+            # Pull from GridFS into a temp directory
+            _upd(message="Fetching video from GridFS…")
+            temp_dir = os.path.join(VIDEOS_DIR, f"_tmp_{request.video_id}")
+            os.makedirs(temp_dir, exist_ok=True)
+            video_path = os.path.join(temp_dir, "video.mp4")
+            await gridfs_download(get_video_bucket(), video_gridfs_id, video_path)
+            pulled_from_gridfs = True
+        else:
+            raise FileNotFoundError(
+                "Video file is not available locally or in GridFS. "
+                "Re-download the video to restore it."
+            )
 
         # Remove old segments for this video (re-processing)
         old_segs = await segments_col.find({"video_id": request.video_id}).to_list(10000)
+        seg_bucket = get_segment_bucket()
         for seg in old_segs:
             fp = seg.get("file_path", "")
             if fp and os.path.exists(fp) and fp != video_path:
@@ -167,6 +191,13 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
                     os.remove(fp)
                 except OSError:
                     pass
+            for field in ("gridfs_file_id", "gridfs_thumb_id"):
+                gfs_id = seg.get(field)
+                if gfs_id:
+                    try:
+                        await seg_bucket.delete(ObjectId(gfs_id))
+                    except Exception:
+                        pass
         await segments_col.delete_many({"video_id": request.video_id})
 
         # ── Chunking ──────────────────────────────────────────────────────────
@@ -221,23 +252,22 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
 
         # ── Parallel embedding with rate-limit backoff ────────────────────────
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_EMBEDS)
-        # Shared progress counter (asyncio is single-threaded — no lock needed)
         completed_count = 0
         skipped_embed = 0
+        # Track GridFS IDs created during this job for rollback on cancel
+        created_gridfs_ids: list[tuple] = []  # (bucket, id) pairs
 
-        # Thumbnail directory: <video_dir>/thumbnails/
         thumb_dir = os.path.join(os.path.dirname(video_path), "thumbnails")
 
         async def _embed_one(orig_index: int, chunk: dict) -> None:
             nonlocal completed_count, skipped_embed
-            # Fast-path skip if job was cancelled before we acquire the semaphore
             if job_id in _cancelled:
                 completed_count += 1
                 if total > 0:
                     _upd(progress=completed_count / total)
                 return
             try:
-                # Generate thumbnail (best-effort — never fails the segment)
+                # Generate thumbnail (best-effort)
                 midpoint = (chunk["start"] + chunk["end"]) / 2
                 thumb_path = os.path.join(thumb_dir, f"thumb_{orig_index:04d}.jpg")
                 try:
@@ -246,6 +276,47 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
                     thumb_path = None
 
                 embeddings_dict, metadata = await _embed_with_backoff(chunk, semaphore)
+
+                # ── Upload segment clip to GridFS ─────────────────────────────
+                seg_gridfs_id: str | None = None
+                if chunk["path"] == video_path:
+                    # "whole" strategy — segment IS the video; reuse its GridFS ID
+                    seg_gridfs_id = video_gridfs_id
+                else:
+                    try:
+                        seg_gridfs_id = await gridfs_upload(
+                            seg_bucket,
+                            os.path.basename(chunk["path"]),
+                            chunk["path"],
+                        )
+                        created_gridfs_ids.append((seg_bucket, seg_gridfs_id))
+                        # Delete local segment clip when running server-side
+                        if pulled_from_gridfs and os.path.exists(chunk["path"]):
+                            try:
+                                os.remove(chunk["path"])
+                            except OSError:
+                                pass
+                    except Exception:
+                        seg_gridfs_id = None
+
+                # ── Upload thumbnail to GridFS ────────────────────────────────
+                thumb_gridfs_id: str | None = None
+                if thumb_path and os.path.exists(thumb_path):
+                    try:
+                        thumb_gridfs_id = await gridfs_upload(
+                            seg_bucket,
+                            os.path.basename(thumb_path),
+                            thumb_path,
+                        )
+                        created_gridfs_ids.append((seg_bucket, thumb_gridfs_id))
+                        if pulled_from_gridfs:
+                            try:
+                                os.remove(thumb_path)
+                            except OSError:
+                                pass
+                    except Exception:
+                        thumb_gridfs_id = None
+
                 seg_doc = {
                     "video_id": request.video_id,
                     "segment_index": orig_index,
@@ -254,6 +325,8 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
                     "caption_text": chunk.get("caption_text"),
                     "file_path": chunk["path"],
                     "thumbnail_path": thumb_path,
+                    "gridfs_file_id": seg_gridfs_id,
+                    "gridfs_thumb_id": thumb_gridfs_id,
                     "embedding": embeddings_dict["embedding"],
                     "embedding_512": embeddings_dict["embedding_512"],
                     "embedding_256": embeddings_dict["embedding_256"],
@@ -280,8 +353,14 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
 
         if job_id in _cancelled:
             _cancelled.discard(job_id)
-            # Roll back any partial segments so the video is in a clean state
+            # Roll back partial segments
             await segments_col.delete_many({"video_id": request.video_id})
+            # Clean up any GridFS files created during this job
+            for bucket, gfs_id in created_gridfs_ids:
+                try:
+                    await bucket.delete(ObjectId(gfs_id))
+                except Exception:
+                    pass
             await videos_col.update_one(
                 {"_id": ObjectId(request.video_id)},
                 {"$set": {"status": "downloaded", "segment_count": 0, "chunking_strategy": None}},
@@ -320,3 +399,8 @@ async def _run_processing_job(job_id: str, request: ProcessRequest) -> None:
             )
         except Exception:
             pass
+
+    finally:
+        # Clean up temp directory if we pulled the video from GridFS
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
