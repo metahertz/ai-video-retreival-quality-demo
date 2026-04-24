@@ -76,6 +76,10 @@ def _do_download(youtube_id: str, output_dir: str) -> dict:
         "merge_output_format": "mp4",
         "writeinfojson": True,
         "noplaylist": True,
+        # Include android_vr as fallback client so downloads work even when the
+        # web client fails the JS n-challenge (e.g. no deno/node runtime, or
+        # expired cookies). android_vr doesn't require the n-challenge solver.
+        "extractor_args": {"youtube": {"player_client": ["web", "android_vr"]}},
         **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
