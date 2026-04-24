@@ -21,12 +21,21 @@ def _cookie_opts() -> dict:
     return {}
 
 
-def _build_search_opts() -> dict:
+def _base_opts() -> dict:
+    """Common yt-dlp options for all requests.
+    Node.js is used as the JS runtime (available in the container via Next.js)."""
     return {
         "quiet": True,
         "no_warnings": True,
-        "extract_flat": True,
+        "js_runtimes": ["node"],
         **_cookie_opts(),
+    }
+
+
+def _build_search_opts() -> dict:
+    return {
+        **_base_opts(),
+        "extract_flat": True,
     }
 
 
@@ -68,19 +77,30 @@ async def search_youtube(query: str, max_results: int = 10) -> list[dict]:
 
 def _do_download(youtube_id: str, output_dir: str) -> dict:
     url = f"https://www.youtube.com/watch?v={youtube_id}"
-    ydl_opts = {
-        "format": "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best",
-        "outtmpl": f"{output_dir}/%(title)s.%(ext)s",
-        "quiet": True,
-        "no_warnings": True,
-        "merge_output_format": "mp4",
-        "writeinfojson": True,
-        "noplaylist": True,
-        **_cookie_opts(),
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-    return info
+    # Try best-quality first; fall back to any available format.
+    # Do NOT add ext= constraints — merge_output_format handles remuxing to mp4.
+    for fmt in (
+        "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best",
+        "best",
+    ):
+        ydl_opts = {
+            **_base_opts(),
+            "format": fmt,
+            "outtmpl": f"{output_dir}/%(title)s.%(ext)s",
+            "merge_output_format": "mp4",
+            "writeinfojson": True,
+            "noplaylist": True,
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            return info
+        except yt_dlp.utils.DownloadError as exc:
+            if "Requested format is not available" in str(exc) or "format is not available" in str(exc).lower():
+                # Try next format selector
+                continue
+            raise
+    raise RuntimeError(f"No suitable format found for {youtube_id}")
 
 
 async def download_video(youtube_id: str, output_dir: str) -> dict:
@@ -110,16 +130,14 @@ def find_downloaded_file(output_dir: str) -> Optional[str]:
 def _do_caption_download(youtube_id: str, output_dir: str) -> None:
     url = f"https://www.youtube.com/watch?v={youtube_id}"
     ydl_opts = {
+        **_base_opts(),
         "writeautomaticsub": True,
         "writesubtitles": True,
         "subtitlesformat": "json3",
         "subtitleslangs": ["en", "en-US", "en-GB"],
         "skip_download": True,
         "outtmpl": os.path.join(output_dir, "captions"),
-        "quiet": True,
-        "no_warnings": True,
         "noplaylist": True,
-        **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.extract_info(url, download=True)

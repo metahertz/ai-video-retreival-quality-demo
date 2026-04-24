@@ -14,7 +14,8 @@ mkdir -p /app/backend/videos
 
 # ── yt-dlp update ────────────────────────────────────────────────────────────
 echo "[entrypoint] Updating yt-dlp to latest version"
-pip install --quiet --upgrade yt-dlp
+pip install --upgrade yt-dlp
+echo "[entrypoint] yt-dlp version: $(python3 -c 'import yt_dlp; print(yt_dlp.version.__version__)')"
 
 # ── frontend build ────────────────────────────────────────────────────────────
 # Build at container start so that NEXT_PUBLIC_API_URL (and any other
