@@ -69,7 +69,7 @@ async def search_youtube(query: str, max_results: int = 10) -> list[dict]:
 def _do_download(youtube_id: str, output_dir: str) -> dict:
     url = f"https://www.youtube.com/watch?v={youtube_id}"
     ydl_opts = {
-        "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
         "outtmpl": f"{output_dir}/%(title)s.%(ext)s",
         "quiet": True,
         "no_warnings": True,
